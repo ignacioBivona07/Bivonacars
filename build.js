@@ -1,13 +1,17 @@
 /* ═══════════════════════════════════════════════════════════════════════
    BivonaCars — construcción del sitio
 
-   Las pantallas grandes viven en la base de datos, no en este repositorio:
-     · tabla "assets"  → appx, publica, panela, panelb (comprimidos, en trozos)
-     · tabla "codigo"  → parche, panel (texto plano)
-   Los archivos chicos y los agregados nuevos viajan junto a este script.
+   El repositorio es la fuente. Cada archivo se busca primero acá al lado;
+   Supabase quedó solo como respaldo de las piezas que todavía no se
+   copiaron, y se puede quitar del medio cuando estén todas.
 
-   Se imprime la huella de cada archivo generado para poder comprobar que
-   llegó entero: si una huella no coincide con la esperada, algo se cortó.
+   Para terminar la mudanza:
+       node build.js
+       node materializar.js
+       node build.js --sin-base     ← si esto pasa, la base ya no hace falta
+
+   Se imprime la huella de cada archivo generado: sirve para comprobar que
+   materializar una pieza no cambió lo que se publica.
    ═══════════════════════════════════════════════════════════════════════ */
 
 const fs     = require('fs');
@@ -74,7 +78,12 @@ const SEPARAR_SESIONES = `
 })();
 `;
 
+/* Con --sin-base no se consulta Supabase. Sirve para comprobar que el
+   repositorio se basta solo antes de borrar las tablas. */
+const SIN_BASE = process.argv.includes('--sin-base');
+
 async function traer(ruta){
+  if(SIN_BASE) throw new Error('modo --sin-base');
   const res = await fetch(BASE + ruta, {
     headers: { apikey: KEY, Authorization: 'Bearer ' + KEY }
   });
@@ -83,9 +92,18 @@ async function traer(ruta){
 }
 
 async function main(){
-  /* ── 1. Piezas comprimidas ── */
-  const filas = await traer('/rest/v1/assets?select=nombre,parte,contenido&order=nombre.asc,parte.asc');
-  if(!Array.isArray(filas) || !filas.length) throw new Error('La base no devolvió ningún trozo de código');
+  /* ── 1. Piezas comprimidas ──
+     La base ya no es obligatoria. Mientras queden piezas sin copiar al
+     repositorio sigue haciendo falta, pero el día que estén todas el
+     build tiene que poder correr sin ella. Por eso un fallo acá avisa y
+     sigue, en vez de cortar. */
+  let filas = [];
+  try {
+    filas = await traer('/rest/v1/assets?select=nombre,parte,contenido&order=nombre.asc,parte.asc');
+  } catch(e){
+    console.log('  · la base no respondió (' + e.message + '); sigo con el repositorio');
+  }
+  if(!Array.isArray(filas)) filas = [];
 
   const porNombre = {};
   for(const f of filas){
@@ -101,14 +119,14 @@ async function main(){
     const b64 = lista.map(x => x.contenido).join('');
     codigo[nombre] = zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8');
   }
-  for(const req of ['appx','publica','panela','panelb'])
-    if(!codigo[req]) throw new Error('Falta la pieza "' + req + '"');
 
 
   /* ── 2. Parches guardados como texto ── */
-  const parches = await traer('/rest/v1/codigo?select=nombre,contenido');
+  let parches = [];
+  try { parches = await traer('/rest/v1/codigo?select=nombre,contenido'); }
+  catch(e){ console.log('  · sin parches de base; sigo con el repositorio'); }
   const texto = {};
-  for(const p of parches) texto[p.nombre] = p.contenido;
+  for(const p of (parches || [])) texto[p.nombre] = p.contenido;
 
   /* Ya no se exige que estén en la base: si el repositorio los tiene,
      alcanza. Solo se corta si no aparecen por ningún lado. */
@@ -182,13 +200,32 @@ async function main(){
     console.log('  ✓ ' + nombre.padEnd(18) + datos.length.toString().padStart(7) + ' bytes   ' + huella);
   };
 
-  escribir('appx.js',    SEPARAR_SESIONES + '\n' + codigo.appx);
-  escribir('publica.js', codigo.publica);
+  /* Estas tres eran las últimas que solo existían en la base. Ahora, si
+     están en el repositorio, se usan de ahí; el armado desde Supabase
+     queda de respaldo hasta que se borren las tablas.
+
+     Ojo con appx.js: la copia del repositorio YA trae adelante el bloque
+     que separa las sesiones, porque se materializó desde public/. Volver
+     a anteponerlo lo duplicaría. */
+  const grande = (archivo, armar) => {
+    const suelto = path.join(__dirname, archivo);
+    if(fs.existsSync(suelto)){
+      console.log('  · ' + archivo + ' → repositorio');
+      return fs.readFileSync(suelto, 'utf8');
+    }
+    const r = armar();
+    if(r == null) throw new Error('Falta "' + archivo + '": no está en el repositorio ni en la base');
+    console.log('  · ' + archivo + ' → base (heredado)');
+    return r;
+  };
+
+  escribir('appx.js',    grande('appx.js',    () => codigo.appx    ? SEPARAR_SESIONES + '\n' + codigo.appx : null));
+  escribir('publica.js', grande('publica.js', () => codigo.publica || null));
 
   /* El panel se sirve como UN SOLO archivo. Servido partido en dos, el
      navegador trata cada <script> como un ámbito aparte y la tabla de
      secciones de la primera mitad no ve las funciones de la segunda. */
-  escribir('panel.js', codigo.panela + '\n' + codigo.panelb);
+  escribir('panel.js',   grande('panel.js',   () => (codigo.panela && codigo.panelb) ? codigo.panela + '\n' + codigo.panelb : null));
 
   escribir('parche.js',       preferirLocal('parche', 'parche.js'));
   escribir('parche-panel.js', preferirLocal('panel',   'parche-panel.js'));
