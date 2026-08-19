@@ -165,9 +165,15 @@ function vistaPublicar(){
 
   tarjeta('Precio, propietario y condiciones','',
     '<div class="grid3">'+
-      campo('Precio de venta (USD)','pvPrecio','number','placeholder="38000"',true)+
-      campo('Precio mínimo (USD)','pvPrecioMin','number','placeholder="Solo para el equipo"')+
+      campo('Precio de venta','pvPrecio','number','placeholder="38000"',true)+
+      seleccion('Moneda del precio','pvMoneda',['USD','ARS'])+
+      campo('Cotización usada','pvCotiz','number','placeholder="Solo si es en pesos"')+
+    '</div><div class="grid3">'+
+      campo('Precio mínimo','pvPrecioMin','number','placeholder="Solo para el equipo"')+
       campo('Ubicación','pvUbic','text','placeholder="Vicente López, GBA Norte"')+
+      '<div class="fld"><label>&nbsp;</label><div class="mini" style="line-height:1.45">'+
+        'La cotización queda congelada con el vehículo: es la que se usa para '+
+        'ordenar el catálogo y calcular la gama, y no se mueve sola.</div></div>'+
     '</div><div class="grid3">'+
       campo('Propietario','pvProp','text','placeholder="Nombre y apellido"',true)+
       campo('Teléfono del propietario','pvTel','text','placeholder="+54 9 11 …"')+
@@ -231,6 +237,16 @@ async function guardarInternos(idv){
 function leerTestDrive(){
   var v = val('pvTestDrive');
   return v === 'si' ? true : (v === 'no' ? false : null);
+}
+
+/* La moneda del alta. Un precio en pesos sin cotización no se puede
+   comparar con el resto del catálogo: no entra en el orden por precio ni
+   cae en la gama que le corresponde. Por eso se exige al publicar; en un
+   borrador se deja pasar, que para eso es un borrador. */
+function monedaDelAlta(){
+  var m = val('pvMoneda') === 'ARS' ? 'ARS' : 'USD';
+  var c = Number(val('pvCotiz')) || null;
+  return { moneda: m, cotizacion: m === 'ARS' ? c : null };
 }
 
 function camposDelAlta(){
@@ -356,6 +372,7 @@ window.retomarVehiculo = async function(id){
   ponerVal('pvModelo', d.modelo);          ponerVal('pvVersion', d.version);
   ponerVal('pvAnio', d.anio);              ponerVal('pvKm', d.km);
   ponerVal('pvPrecio', d.precio);          ponerVal('pvUbic', d.ubicacion);
+  ponerVal('pvMoneda', d.moneda || 'USD');  ponerVal('pvCotiz', d.cotizacion);
   ponerVal('pvCarroceria', d.carroceria);  ponerVal('pvUso', d.uso_previo);
   ponerVal('pvPatente', d.patente);        ponerVal('pvProp', d.propietario);
   ponerVal('pvMotivo', d.motivo_venta);    ponerVal('pvVerlo', d.disponible_para_ver);
@@ -414,6 +431,7 @@ window.guardarBorrador = async function(){
     tipo: val('pvTipo')||'Auto', marca: marca, modelo: modelo, version: val('pvVersion')||null,
     anio: num('pvAnio'), km: Number(val('pvKm'))||0,
     precio: Number(val('pvPrecio'))||null, estado: 'borrador',
+    moneda: monedaDelAlta().moneda, cotizacion: monedaDelAlta().cotizacion,
     carroceria: val('pvCarroceria')||null, uso_previo: val('pvUso')||'Particular',
     ubicacion: val('pvUbic')||null, propietario: val('pvProp')||'A completar',
     patente: val('pvPatente')||null,
@@ -461,6 +479,9 @@ window.publicarVehiculo = async function(){
   if(!marca || !modelo) return toast('Completá marca y modelo','error');
   if(!anio)   return toast('Completá el año','error');
   if(!precio) return toast('Completá el precio de venta','error');
+  var mon = monedaDelAlta();
+  if(mon.moneda === 'ARS' && !(mon.cotizacion > 0))
+    return toast('Si el precio está en pesos hace falta la cotización usada','error');
   if(!prop)   return toast('Completá el propietario','error');
   if(!fotosElegidas.length) return toast('Cargá al menos una foto del vehículo','error');
 
@@ -471,6 +492,7 @@ window.publicarVehiculo = async function(){
   var ficha = {
     tipo: val('pvTipo')||'Auto', marca: marca, modelo: modelo, version: val('pvVersion')||null,
     anio: anio, km: Number(val('pvKm'))||0, precio: precio, estado: 'disponible',
+    moneda: mon.moneda, cotizacion: mon.cotizacion,
     carroceria: val('pvCarroceria')||null, uso_previo: val('pvUso')||'Particular',
     ubicacion: val('pvUbic')||'CABA', propietario: prop, patente: val('pvPatente')||null,
     motor: val('pvMotor')||null, cilindrada: val('pvCilindrada')||null, potencia_hp: num('pvPotencia'),
