@@ -92,14 +92,14 @@ function estilos(){
       'color:#fff;min-height:clamp(440px,62vh,660px);' +
       'display:flex;align-items:center;padding:58px 24px}' +
     '.bc-familia .caja{max-width:1020px;margin:0 auto;display:grid;' +
-      'grid-template-columns:minmax(0,290px) minmax(0,1fr);gap:46px;' +
+      'grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:52px;' +
       'align-items:center;text-align:left}' +
-    '.bc-familia .escudo{width:100%;max-width:290px;height:auto;display:block;' +
+    '.bc-familia .escudo{width:100%;max-width:380px;height:auto;display:block;' +
       'justify-self:center;filter:drop-shadow(0 14px 34px rgba(0,0,0,.45))}' +
     '.bc-familia .txt{width:100%}' +
     '@media(max-width:760px){' +
       '.bc-familia .caja{grid-template-columns:1fr;gap:30px;text-align:center}' +
-      '.bc-familia .escudo{max-width:200px}}' +
+      '.bc-familia .escudo{max-width:260px}}' +
     '.bc-familia h2{font-size:clamp(1.4rem,2.6vw,2rem);font-weight:800;letter-spacing:-.6px;margin-bottom:14px}' +
     '.bc-familia p{color:#C3D6C8;font-size:.97rem;line-height:1.75;margin-bottom:12px}' +
     '.bc-cifras{display:flex;justify-content:center;flex-wrap:wrap;background:#fff;' +
@@ -196,7 +196,7 @@ function vistaInicio(){
 
   /* ── El escudo de la familia ─────────────────────────────── */
   '<div class="bc-familia"><div class="caja">'+
-    '<img class="escudo" src="marca-escudo.webp" width="560" height="560" '+
+    '<img class="escudo" src="marca-escudo.webp" width="641" height="641" '+
       'loading="lazy" alt="Escudo de BivonaCars">'+
     '<div class="txt">'+
       '<h2>Un auto casi nunca es sólo un auto</h2>'+

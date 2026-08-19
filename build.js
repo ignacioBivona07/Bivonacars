@@ -207,16 +207,24 @@ async function main(){
      Viven en marca/ como archivos binarios normales. Se copian tal cual.
      Si alguna faltara, se cae de nuevo a la copia en base64 de la base,
      que queda como red de contención hasta que se borre la tabla. */
-  const dirMarca = path.join(__dirname, 'marca');
+  /* Se busca en marca/ y también en la raíz: al bajar los archivos de a
+     uno se pierde la carpeta, y una imagen puesta al lado de build.js
+     tiene que funcionar igual. */
+  const buscarImagen = (nombre) => {
+    for(const p of [path.join(__dirname, 'marca', nombre), path.join(__dirname, nombre)])
+      if(fs.existsSync(p)) return p;
+    return null;
+  };
+
   for(const clave of Object.keys(BINARIOS)){
     const nombre = BINARIOS[clave];
-    const suelto = path.join(dirMarca, nombre);
+    const suelto = buscarImagen(nombre);
 
-    if(fs.existsSync(suelto)){
+    if(suelto){
       const datos = fs.readFileSync(suelto);
       fs.writeFileSync(path.join(dir, nombre), datos);
       console.log('  \u2713 ' + nombre.padEnd(20) + datos.length.toString().padStart(7) +
-        ' bytes   marca/');
+        ' bytes   ' + path.relative(__dirname, suelto));
       continue;
     }
 
