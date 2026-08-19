@@ -28,6 +28,32 @@ function chk(id){ var e = document.getElementById(id); return !!(e && e.checked)
 function usd(n){ return 'USD ' + Math.round(Number(n)||0).toLocaleString('es-AR'); }
 function ars(n){ return '$ '   + Math.round(Number(n)||0).toLocaleString('es-AR'); }
 function plata(m, n){ return (m === 'ARS' ? ars(n) : usd(n)); }
+
+/* La cotización de Configuración. La publica parche-panel.js al cargarla,
+   porque este archivo tiene su propio cierre y no ve aquel "config". */
+function cotizacionDeReferencia(){ return Number(window.cotizacionDolar) || 0; }
+
+/* Cambiar de moneda convierte el precio ya escrito en vez de obligar a
+   recalcularlo a mano. */
+window.cambiarMonedaEdicion = function(){
+  var e = document.getElementById('evMoneda');
+  if(!e) return;
+  var nueva  = e.value === 'ARS' ? 'ARS' : 'USD';
+  var previa = e.getAttribute('data-previa') || 'USD';
+  e.setAttribute('data-previa', nueva);
+  if(nueva === previa) return;
+
+  var cot = Number(val('evCotiz')) || cotizacionDeReferencia();
+  var p   = Number(val('evPrecio'));
+  if(!(cot > 0)) return toast('Falta la cotización del dólar para convertir','error');
+  if(!(p > 0)) return;
+
+  var campo = document.getElementById('evPrecio');
+  if(campo) campo.value = Math.round(nueva === 'ARS' ? p * cot : p / cot);
+  var campoC = document.getElementById('evCotiz');
+  if(campoC && !campoC.value) campoC.value = cot;
+  toast('Precio convertido a ' + nueva + ' con cotización ' + cot, 'ok');
+};
 function dia(f){ if(!f) return '—'; var d = new Date(f + (String(f).length<=10?'T12:00:00':''));
   return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 function hoy(){ return new Date().toISOString().slice(0,10); }
@@ -806,13 +832,17 @@ window.editarVehiculo = function(id){
       campo('Kilómetros','evKm','number','value="'+esc(v.km||'')+'"')+
       campo('Precio de venta','evPrecio','number','value="'+esc(v.precio)+'"',true)+
     '</div><div class="grid3">'+
-      selec('Moneda del precio','evMoneda',['USD','ARS'], v.moneda || 'USD')+
+      '<div class="fld"><label>Moneda del precio</label>'+
+        '<select id="evMoneda" data-previa="'+esc(v.moneda||'USD')+'" onchange="cambiarMonedaEdicion()">'+
+          ['USD','ARS'].map(function(o){
+            return '<option value="'+o+'"'+((v.moneda||'USD')===o?' selected':'')+'>'+o+'</option>';
+          }).join('')+'</select></div>'+
       campo('Cotización usada','evCotiz','number',
-        'value="'+esc(v.cotizacion||'')+'" placeholder="pesos por dólar"')+
+        'value="'+esc(v.cotizacion || cotizacionDeReferencia() || '')+'" placeholder="pesos por dólar"')+
       '<div class="fld"><label>&nbsp;</label><div class="mini" style="line-height:1.45">'+
-        'La cotización solo hace falta si el precio está en pesos. Se guarda '+
-        'congelada: sirve para ordenar el catálogo y para calcular la gama, y '+
-        'no cambia sola cuando se mueve el dólar.</div></div>'+
+        'Viene de Configuración. Al cambiar de moneda el precio se convierte '+
+        'solo. Queda congelada con el vehículo: ordena el catálogo y calcula '+
+        'la gama, y no se mueve cuando se mueve el dólar.</div></div>'+
     '</div><div class="grid3">'+
       campo('Color','evColor','text','value="'+esc(v.color||'')+'"')+
       selec('Combustible','evComb',['Nafta','Diésel','Híbrido','Eléctrico','GNC','Nafta/GNC'], v.combustible)+
@@ -870,23 +900,19 @@ window.guardarVehiculo = async function(id){
   if(!(precio > 0)) return toast('El precio tiene que ser mayor a cero','error');
 
   var moneda = val('evMoneda') === 'ARS' ? 'ARS' : 'USD';
-  var cotiz  = Number(val('evCotiz')) || null;
+  var cotiz  = Number(val('evCotiz')) || cotizacionDeReferencia() || null;
 
   /* Un precio en pesos sin cotización no se puede comparar con nada: no
      entra en el orden del catálogo ni cae en la gama que le corresponde.
      Mejor frenarlo acá que publicarlo mal. */
   if(moneda === 'ARS' && !(cotiz > 0))
-    return toast('Si el precio está en pesos hace falta la cotización usada','error');
+    return toast('Falta la cotización del dólar. Cargala en Configuración o escribila acá','error');
   if(moneda === 'USD') cotiz = null;
-
-  var muestra = function(n, m){
-    return (m === 'ARS' ? '$ ' : 'USD ') + Number(n||0).toLocaleString('es-AR');
-  };
 
   var v = vehiculoDe(id);
   if(v && (Number(v.precio) !== precio || (v.moneda||'USD') !== moneda)){
-    if(!confirm('Vas a cambiar el precio de '+muestra(v.precio, v.moneda||'USD')+
-                ' a '+muestra(precio, moneda)+'.\n\n'+
+    if(!confirm('Vas a cambiar el precio de '+plata(v.moneda||'USD', v.precio)+
+                ' a '+plata(moneda, precio)+'.\n\n'+
                 'El cambio queda registrado con tu nombre. ¿Confirmás?')) return;
   }
 

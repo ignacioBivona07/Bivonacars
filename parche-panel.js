@@ -166,14 +166,19 @@ function vistaPublicar(){
   tarjeta('Precio, propietario y condiciones','',
     '<div class="grid3">'+
       campo('Precio de venta','pvPrecio','number','placeholder="38000"',true)+
-      seleccion('Moneda del precio','pvMoneda',['USD','ARS'])+
-      campo('Cotización usada','pvCotiz','number','placeholder="Solo si es en pesos"')+
+      '<div class="fld"><label>Moneda del precio</label>'+
+        '<select id="pvMoneda" onchange="cambiarMonedaAlta()">'+
+          '<option value="USD">USD</option><option value="ARS">ARS</option>'+
+        '</select></div>'+
+      campo('Cotización usada','pvCotiz','number',
+        'onchange="recalcularCotizAlta()" placeholder="pesos por dólar"')+
     '</div><div class="grid3">'+
       campo('Precio mínimo','pvPrecioMin','number','placeholder="Solo para el equipo"')+
       campo('Ubicación','pvUbic','text','placeholder="Vicente López, GBA Norte"')+
       '<div class="fld"><label>&nbsp;</label><div class="mini" style="line-height:1.45">'+
-        'La cotización queda congelada con el vehículo: es la que se usa para '+
-        'ordenar el catálogo y calcular la gama, y no se mueve sola.</div></div>'+
+        'Se completa con la cotización de Configuración. Al cambiar de moneda '+
+        'el precio se convierte solo. Queda congelada con el vehículo: es la '+
+        'que ordena el catálogo y calcula la gama.</div></div>'+
     '</div><div class="grid3">'+
       campo('Propietario','pvProp','text','placeholder="Nombre y apellido"',true)+
       campo('Teléfono del propietario','pvTel','text','placeholder="+54 9 11 …"')+
@@ -243,11 +248,53 @@ function leerTestDrive(){
    comparar con el resto del catálogo: no entra en el orden por precio ni
    cae en la gama que le corresponde. Por eso se exige al publicar; en un
    borrador se deja pasar, que para eso es un borrador. */
+function cotizacionGeneral(){
+  return Number(config.cotizacion_dolar ? config.cotizacion_dolar.valor : 0) || 0;
+}
+
+/* La cotización del alta arranca con la de Configuración, para no tener
+   que escribirla en cada carga. Se puede pisar a mano si ese auto en
+   particular se pactó a otro valor. */
+function cotizacionDelAlta(){
+  return Number(val('pvCotiz')) || cotizacionGeneral();
+}
+
 function monedaDelAlta(){
   var m = val('pvMoneda') === 'ARS' ? 'ARS' : 'USD';
-  var c = Number(val('pvCotiz')) || null;
-  return { moneda: m, cotizacion: m === 'ARS' ? c : null };
+  return { moneda: m, cotizacion: m === 'ARS' ? (cotizacionDelAlta() || null) : null };
 }
+
+/* Al cambiar de moneda se convierte el precio que ya está escrito, en vez
+   de obligar a recalcularlo a mano. Se redondea: un precio de lista con
+   centavos no le sirve a nadie. */
+window.cambiarMonedaAlta = function(){
+  var e = document.getElementById('pvMoneda');
+  var nueva = (e && e.value === 'ARS') ? 'ARS' : 'USD';
+  var previa = e ? (e.getAttribute('data-previa') || 'USD') : 'USD';
+  if(e) e.setAttribute('data-previa', nueva);
+
+  var cot = cotizacionDelAlta();
+  var p   = Number(val('pvPrecio'));
+
+  if(p > 0 && cot > 0 && nueva !== previa){
+    var convertido = (nueva === 'ARS') ? p * cot : p / cot;
+    ponerVal('pvPrecio', Math.round(convertido));
+    toast('Precio convertido a ' + nueva + ' con cotización ' + cot, 'ok');
+  } else if(nueva === 'ARS' && !(cot > 0)){
+    toast('Cargá la cotización del dólar en Configuración para convertir solo','error');
+  }
+  if(nueva === 'ARS' && cot > 0 && !val('pvCotiz')) ponerVal('pvCotiz', cot);
+};
+
+/* Si se corrige la cotización a mano y el precio ya está en pesos, se
+   reexpresa con el valor nuevo. */
+window.recalcularCotizAlta = function(){
+  var e = document.getElementById('pvMoneda');
+  if(!e || e.value !== 'ARS') return;
+  var cot = Number(val('pvCotiz'));
+  var p   = Number(val('pvPrecio'));
+  if(cot > 0 && p > 0) toast('Cotización actualizada a ' + cot, 'ok');
+};
 
 function camposDelAlta(){
   return document.querySelectorAll('[id^="pv"],[id^="dc"],[id^="eq"]');
@@ -481,7 +528,7 @@ window.publicarVehiculo = async function(){
   if(!precio) return toast('Completá el precio de venta','error');
   var mon = monedaDelAlta();
   if(mon.moneda === 'ARS' && !(mon.cotizacion > 0))
-    return toast('Si el precio está en pesos hace falta la cotización usada','error');
+    return toast('Falta la cotización del dólar. Cargala en Configuración o escribila acá','error');
   if(!prop)   return toast('Completá el propietario','error');
   if(!fotosElegidas.length) return toast('Cargá al menos una foto del vehículo','error');
 
@@ -1024,6 +1071,10 @@ async function cargarConfig(){
   var r = await sb.from('config').select('*');
   config = {};
   (r.data||[]).forEach(function(c){ config[c.clave] = c; });
+
+  /* panel-crm.js vive en su propio cierre y no ve este "config".
+     Se expone la cotización sola, que es lo único que necesita de acá. */
+  window.cotizacionDolar = cotizacionGeneral();
 }
 async function cargarExtras(){
   var r = await Promise.all([
@@ -1049,6 +1100,14 @@ SECCIONES.publicar.post   = function(){
     n[i].addEventListener('change', recordarAlta);
     n[i].addEventListener('input',  recordarAlta);
   }
+
+  /* La cotización se completa sola con la de Configuración: no tiene
+     sentido escribirla en cada carga. Y se anota la moneda de partida
+     para saber en qué sentido convertir cuando se cambie. */
+  var sel = document.getElementById('pvMoneda');
+  if(sel && !sel.getAttribute('data-previa')) sel.setAttribute('data-previa', sel.value || 'USD');
+  if(!val('pvCotiz') && cotizacionGeneral() > 0) ponerVal('pvCotiz', cotizacionGeneral());
+
   pintarBorradores();
   if(!hayAltaGuardada()) return;
   var caja = document.querySelector('.content') || document.getElementById('app');
