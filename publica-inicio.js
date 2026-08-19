@@ -25,6 +25,14 @@ function esc(t){
 }
 function usd(n){ return 'USD ' + Number(n||0).toLocaleString('es-AR'); }
 
+/* El precio de un vehículo ya no es siempre en dólares: la moneda viaja
+   en la propia fila. Una fila sin moneda se lee como USD, que es lo que
+   era todo hasta que se agregó la columna. */
+function precio(v){
+  var n = Number((v && v.precio) || 0);
+  return ((v && v.moneda === 'ARS') ? '$ ' : 'USD ') + n.toLocaleString('es-AR');
+}
+
 function autos(){
   var v = (typeof vehiculos !== 'undefined' && vehiculos) ? vehiculos : [];
   return v.filter(function(x){ return x.estado === 'disponible'; });
@@ -49,7 +57,7 @@ function estilos(){
   var s = document.createElement('style');
   s.id = 'estilosInicio';
   s.textContent =
-    '.bc-hero{' + fondo('marca-logo.webp', VELO_VERDE, '#16382a') + ';' +
+    '.bc-hero{' + fondo('marca-logo.webp', VELO_VERDE, '#16382a', 'center 32%') + ';' +
       'color:#fff;text-align:center;min-height:clamp(560px,82vh,840px);' +
       'display:flex;flex-direction:column;justify-content:flex-end;padding:48px 24px 62px}' +
     /* El logo ya está en la foto de fondo: no hace falta ninguna imagen suelta. */
@@ -77,11 +85,21 @@ function estilos(){
       'font-weight:800;background:#14261c;color:#C9A961;margin-bottom:13px}' +
     '.bc-paso h4{font-size:1rem;font-weight:800;color:var(--navy);margin-bottom:6px}' +
     '.bc-paso p{font-size:.88rem;color:var(--gray);line-height:1.6}' +
-    '.bc-familia{' + fondo('marca-escudo.webp', VELO_VERDE, '#253323') + ';' +
-      'color:#fff;min-height:clamp(540px,76vh,800px);' +
-      'display:flex;align-items:flex-end;padding:48px 24px 56px}' +
-    '.bc-familia .caja{max-width:720px;margin:0 auto;text-align:center}' +
+    /* El escudo era el fondo de toda la sección y el texto le caía encima:
+       con el velo puesto no se leía ni una cosa ni la otra. Ahora es una
+       pieza al costado, a tamaño real, sobre el verde de la marca. */
+    '.bc-familia{background:linear-gradient(158deg,#1E3527 0%,#16261C 100%);' +
+      'color:#fff;min-height:clamp(440px,62vh,660px);' +
+      'display:flex;align-items:center;padding:58px 24px}' +
+    '.bc-familia .caja{max-width:1020px;margin:0 auto;display:grid;' +
+      'grid-template-columns:minmax(0,290px) minmax(0,1fr);gap:46px;' +
+      'align-items:center;text-align:left}' +
+    '.bc-familia .escudo{width:100%;max-width:290px;height:auto;display:block;' +
+      'justify-self:center;filter:drop-shadow(0 14px 34px rgba(0,0,0,.45))}' +
     '.bc-familia .txt{width:100%}' +
+    '@media(max-width:760px){' +
+      '.bc-familia .caja{grid-template-columns:1fr;gap:30px;text-align:center}' +
+      '.bc-familia .escudo{max-width:200px}}' +
     '.bc-familia h2{font-size:clamp(1.4rem,2.6vw,2rem);font-weight:800;letter-spacing:-.6px;margin-bottom:14px}' +
     '.bc-familia p{color:#C3D6C8;font-size:.97rem;line-height:1.75;margin-bottom:12px}' +
     '.bc-cifras{display:flex;justify-content:center;flex-wrap:wrap;background:#fff;' +
@@ -98,7 +116,7 @@ function estilos(){
     '.bc-faq p{font-size:.88rem;color:var(--gray);line-height:1.68;margin-top:11px}' +
     /* El cierre va en cuero negro: descansa la vista del verde y le da
        peso al final de la página. */
-    '.bc-cierre{' + fondo('marca-oscura.webp', VELO_NEGRO, '#0d0d0d', 'center') + ';' +
+    '.bc-cierre{' + fondo('marca-oscura.webp', VELO_NEGRO, '#0d0d0d', 'center 70%') + ';' +
       'color:#fff;text-align:center;min-height:clamp(460px,64vh,680px);' +
       'display:flex;flex-direction:column;justify-content:flex-end;padding:48px 24px 54px}' +
     '@media(max-width:700px){.bc-cifra{padding:20px 26px}}';
@@ -178,6 +196,8 @@ function vistaInicio(){
 
   /* ── El escudo de la familia ─────────────────────────────── */
   '<div class="bc-familia"><div class="caja">'+
+    '<img class="escudo" src="marca-escudo.webp" width="560" height="560" '+
+      'loading="lazy" alt="Escudo de BivonaCars">'+
     '<div class="txt">'+
       '<h2>Un auto casi nunca es sólo un auto</h2>'+
       '<p>Es llevar a los chicos al colegio. Es la changa que podés aceptar porque ahora '+
@@ -208,7 +228,7 @@ function vistaInicio(){
                 '<div class="vtitle">'+esc(t)+'</div>'+
                 '<div class="vmeta">'+(v.km ? Number(v.km).toLocaleString('es-AR')+' km' : 'Km sin declarar')+
                   (v.combustible ? ' · '+esc(v.combustible) : '')+'</div>'+
-                '<div class="vprice">'+usd(v.precio)+'</div>'+
+                '<div class="vprice">'+precio(v)+'</div>'+
                 '<button class="btn btn-block" style="margin-top:13px" '+
                   'onclick="consultarPorVehiculo('+v.id+',\''+esc(t).replace(/'/g,"\\'")+'\')">'+
                   'Consultar</button>'+

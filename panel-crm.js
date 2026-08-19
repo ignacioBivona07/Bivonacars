@@ -804,7 +804,15 @@ window.editarVehiculo = function(id){
     '</div><div class="grid3">'+
       campo('Año','evAnio','number','value="'+esc(v.anio||'')+'"')+
       campo('Kilómetros','evKm','number','value="'+esc(v.km||'')+'"')+
-      campo('Precio de venta (USD)','evPrecio','number','value="'+esc(v.precio)+'"',true)+
+      campo('Precio de venta','evPrecio','number','value="'+esc(v.precio)+'"',true)+
+    '</div><div class="grid3">'+
+      selec('Moneda del precio','evMoneda',['USD','ARS'], v.moneda || 'USD')+
+      campo('Cotización usada','evCotiz','number',
+        'value="'+esc(v.cotizacion||'')+'" placeholder="pesos por dólar"')+
+      '<div class="fld"><label>&nbsp;</label><div class="mini" style="line-height:1.45">'+
+        'La cotización solo hace falta si el precio está en pesos. Se guarda '+
+        'congelada: sirve para ordenar el catálogo y para calcular la gama, y '+
+        'no cambia sola cuando se mueve el dólar.</div></div>'+
     '</div><div class="grid3">'+
       campo('Color','evColor','text','value="'+esc(v.color||'')+'"')+
       selec('Combustible','evComb',['Nafta','Diésel','Híbrido','Eléctrico','GNC','Nafta/GNC'], v.combustible)+
@@ -839,7 +847,7 @@ window.editarVehiculo = function(id){
     '<div style="font-weight:800;color:var(--navy);font-size:.9rem;margin:16px 0 6px">'+
       'Solo para el equipo <span class="mini" style="font-weight:500">— el comisionista nunca ve esto</span></div>'+
     '<div class="grid2">'+
-      campo('Precio mínimo aceptable (USD)','evPrecioMin','number','value="'+esc(i.precio_minimo||'')+'"')+
+      campo('Precio mínimo aceptable','evPrecioMin','number','value="'+esc(i.precio_minimo||'')+'"')+
       campo('Teléfono del propietario','evTel','text','value="'+esc(i.tel_propietario||'')+'"')+
     '</div><div class="grid3">'+
       campo('Patente','evPatente','text','value="'+esc(v.patente||'')+'"')+
@@ -861,9 +869,24 @@ window.guardarVehiculo = async function(id){
   var precio = Number(val('evPrecio'));
   if(!(precio > 0)) return toast('El precio tiene que ser mayor a cero','error');
 
+  var moneda = val('evMoneda') === 'ARS' ? 'ARS' : 'USD';
+  var cotiz  = Number(val('evCotiz')) || null;
+
+  /* Un precio en pesos sin cotización no se puede comparar con nada: no
+     entra en el orden del catálogo ni cae en la gama que le corresponde.
+     Mejor frenarlo acá que publicarlo mal. */
+  if(moneda === 'ARS' && !(cotiz > 0))
+    return toast('Si el precio está en pesos hace falta la cotización usada','error');
+  if(moneda === 'USD') cotiz = null;
+
+  var muestra = function(n, m){
+    return (m === 'ARS' ? '$ ' : 'USD ') + Number(n||0).toLocaleString('es-AR');
+  };
+
   var v = vehiculoDe(id);
-  if(v && Number(v.precio) !== precio){
-    if(!confirm('Vas a cambiar el precio de '+usd(v.precio)+' a '+usd(precio)+'.\n\n'+
+  if(v && (Number(v.precio) !== precio || (v.moneda||'USD') !== moneda)){
+    if(!confirm('Vas a cambiar el precio de '+muestra(v.precio, v.moneda||'USD')+
+                ' a '+muestra(precio, moneda)+'.\n\n'+
                 'El cambio queda registrado con tu nombre. ¿Confirmás?')) return;
   }
 
@@ -871,6 +894,7 @@ window.guardarVehiculo = async function(id){
   var up = await sb.from('vehiculos').update({
     marca: val('evMarca'), modelo: val('evModelo'), version: val('evVersion')||null,
     anio: num('evAnio'), km: num('evKm')||0, precio: precio,
+    moneda: moneda, cotizacion: cotiz,
     color: val('evColor')||null, combustible: val('evComb'), transmision: val('evTrans'),
     ubicacion: val('evUbic')||null, estado_general: val('evEstadoGral'),
     estado: val('evEstado'), descripcion: val('evDesc')||null, patente: val('evPatente')||null,

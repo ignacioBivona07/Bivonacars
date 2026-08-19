@@ -48,6 +48,28 @@ function esc(t){
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function usd(n){ return 'USD ' + Number(n||0).toLocaleString('es-AR'); }
+
+/* Un vehículo puede estar publicado en dólares o en pesos. La moneda y la
+   cotización a la que se fijó el precio viajan en la propia fila.
+
+   Para MOSTRAR se usa la moneda tal cual: al que mira el auto no se le
+   convierte nada, ve el precio como está publicado.
+
+   Para COMPARAR (ordenar por precio, filtrar por rango) hay que llevar
+   todo a una sola unidad, porque si no un auto de 15 millones de pesos
+   se ordena como si fuera más caro que uno de 40.000 dólares. Se usa la
+   cotización congelada de la fila, no una viva: así el orden no cambia
+   solo porque se movió el dólar. */
+function precio(v){
+  var n = Number((v && v.precio) || 0);
+  return ((v && v.moneda === 'ARS') ? '$ ' : 'USD ') + n.toLocaleString('es-AR');
+}
+function precioUSD(v){
+  var n = Number((v && v.precio) || 0);
+  var c = Number((v && v.cotizacion) || 0);
+  if(v && v.moneda === 'ARS' && c > 0) return n / c;
+  return n;
+}
 function num(n){ return Number(n||0).toLocaleString('es-AR'); }
 
 function urlFoto(ruta){
@@ -110,7 +132,7 @@ function tarjeta(v){
         (v.combustible ? ' · '+esc(v.combustible) : '')+
         (v.transmision ? ' · '+esc(v.transmision) : '')+
       '</div>'+
-      '<div class="vprice">'+usd(v.precio)+'</div>'+
+      '<div class="vprice">'+precio(v)+'</div>'+
       '<div class="vspecs" style="margin-top:11px">'+
         (v.acepta_permuta   ? '<span class="spec">Acepta permuta</span>' : '')+
         (v.unico_dueno      ? '<span class="spec">Único dueño</span>' : '')+
@@ -151,7 +173,7 @@ window.verAuto = function(id){
       : '')+
 
     '<div style="font-size:1.7rem;font-weight:800;color:var(--navy);letter-spacing:-.5px;'+
-      'margin-bottom:4px">'+usd(v.precio)+'</div>'+
+      'margin-bottom:4px">'+precio(v)+'</div>'+
     '<div class="mini" style="margin-bottom:16px">'+
       (v.km ? num(v.km)+' km' : 'Kilometraje sin declarar')+
       (v.ubicacion ? ' · '+esc(v.ubicacion) : '')+'</div>'+
@@ -160,6 +182,7 @@ window.verAuto = function(id){
       'white-space:pre-wrap">'+esc(v.descripcion)+'</div>' : '')+
 
     '<div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:4px 15px">'+
+      dato('Moneda', v.moneda === 'ARS' ? 'Pesos argentinos' : '')+
       dato('Año', v.anio)+
       dato('Carrocería', v.carroceria)+
       dato('Motor', v.motor)+
@@ -243,8 +266,8 @@ function pasaElFiltro(v){
   if(f.carroceria  && v.carroceria  !== f.carroceria)  return false;
   if(f.combustible && v.combustible !== f.combustible) return false;
   if(f.transmision && v.transmision !== f.transmision) return false;
-  if(f.precioMin && Number(v.precio) < Number(f.precioMin)) return false;
-  if(f.precioMax && Number(v.precio) > Number(f.precioMax)) return false;
+  if(f.precioMin && precioUSD(v) < Number(f.precioMin)) return false;
+  if(f.precioMax && precioUSD(v) > Number(f.precioMax)) return false;
   if(f.anioMin   && Number(v.anio||0) < Number(f.anioMin))  return false;
   if(f.anioMax   && Number(v.anio||9999) > Number(f.anioMax)) return false;
   if(f.kmMax     && Number(v.km||0) > Number(f.kmMax))      return false;
@@ -266,8 +289,8 @@ function vistaAutos(){
 
   var lista = A.autos.filter(pasaElFiltro);
 
-  if(A.orden === 'baratos') lista.sort(function(a,b){ return a.precio - b.precio; });
-  if(A.orden === 'caros')   lista.sort(function(a,b){ return b.precio - a.precio; });
+  if(A.orden === 'baratos') lista.sort(function(a,b){ return precioUSD(a) - precioUSD(b); });
+  if(A.orden === 'caros')   lista.sort(function(a,b){ return precioUSD(b) - precioUSD(a); });
   if(A.orden === 'km')      lista.sort(function(a,b){ return (a.km||0) - (b.km||0); });
   if(A.orden === 'nuevo')   lista.sort(function(a,b){ return (b.anio||0) - (a.anio||0); });
 

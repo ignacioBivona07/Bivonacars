@@ -1,0 +1,10 @@
+ build.js            | 96 +++++++++++++++++++++++++++++------------------------
+ panel-crm.js        | 32 +++++++++++++++---
+ publica-catalogo.js | 35 +++++++++++++++----
+ publica-inicio.js   | 34 +++++++++++++++----
+ 4 files changed, 137 insertions(+), 60 deletions(-)
+
+=== Sin control de versiones todavia ===
+marca/marca-logo.webp   1408x768  (antes 900px)
+marca/marca-oscura.webp 1408x768  (antes 900px)
+marca/marca-escudo.webp  560x560  RGBA, damero eliminado

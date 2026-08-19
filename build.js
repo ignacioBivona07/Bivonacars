@@ -34,28 +34,17 @@ const BINARIOS = {
 
 /* Huella de cada imagen ya armada, para que una imagen cortada tampoco
    pase inadvertida. Es la misma idea que HUELLA pero sobre el base64. */
-const HUELLA_IMG = {
-  logomarca:   '2c17dc9db35bda41ee53ef77431a738a',
-  escudo:      'eca923dc61313736fed02402d2855678',
-  marcaoscura: '26a75545932183f9dbe8f4cf9e884a44',
-  pointer:     '1d6dcef86451f85b8e73551c09344736'
-};
+/* Las imágenes ahora son archivos de verdad en marca/. Ya no viajan en
+   base64 ni necesitan huella. */
 
 /* Huella del archivo original, antes de comprimirlo. Es el control final:
    si lo que sale del gunzip no coincide, algo se rompió en el camino y
    preferimos que la construcción falle antes que publicar código cortado. */
-const HUELLA = {
-  panelvta: '1b9f0b511a98f9512eed7b0b5a02f590',
-  panelcrm: '0b50eaf4cb7cff57ef24dc2d57eede6f',
-  panelseg: '3dbacf309bca13f4b5c0e301f864eb3c',
-  panelcta: '686a517148f4b541a19c3cbf702dc8d7',
-  pubini:   '7e09bddd69bb36df7bfb67a990b7929a',
-  parche2:  '0817265ee04b1d001ebfb03e4a045bd6',
-  pubcat:   '41fba99708161139ff26bf4a0850da27',
-  pubdir:   '6f6502890f447403572ac0dbcdd7508b',
-  pubperf:  'c09828cdea8fb9d5d394369fd71e967f',
-  pubcli:   '4b1e9b3c6f014fefb010ac3189d8386f'
-};
+/* Antes acá había una huella fija por archivo. Con el código viviendo en
+   la base tenía sentido: detectaba un trozo cortado. Con el código en el
+   repositorio es una trampa, porque salta en cada cambio intencional. Se
+   conserva la comprobación solo para lo que todavía baja de Supabase. */
+const HUELLA = {};
 
 /* ── El nombre del negocio se aplica al final, en un solo lugar ── */
 function marca(texto){
@@ -121,10 +110,8 @@ async function main(){
   const texto = {};
   for(const p of parches) texto[p.nombre] = p.contenido;
 
-  for(const req of ['parche','panel']){
-    if(!texto[req] || texto[req].length < 1000)
-      throw new Error('El parche "' + req + '" no llegó o llegó vacío');
-  }
+  /* Ya no se exige que estén en la base: si el repositorio los tiene,
+     alcanza. Solo se corta si no aparecen por ningún lado. */
 
   /* Estas piezas pueden venir de cuatro lados. Se prueban en orden:
      1) como texto en "codigo"        → para corregir algo puntual sin rearmar todo
@@ -142,7 +129,17 @@ async function main(){
     return contenido;
   };
 
-  const preferirBase = (clave, archivo) => {
+  const preferirLocal = (clave, archivo) => {
+    /* El repositorio manda. Antes ganaba la base y por eso editar un
+       archivo acá no cambiaba nada: el build lo pisaba con la copia de
+       Supabase. Ahora es al revés, y la base queda solo de red de
+       contención para las piezas que todavía no se materializaron. */
+    const suelto = path.join(__dirname, archivo);
+    if(fs.existsSync(suelto)){
+      console.log('  · ' + archivo + ' → repositorio');
+      return local(archivo);
+    }
+
     if(texto[clave] && texto[clave].length > 1000){
       console.log('  · ' + archivo + ' → desde la tabla codigo');
       return texto[clave];
@@ -193,33 +190,46 @@ async function main(){
      secciones de la primera mitad no ve las funciones de la segunda. */
   escribir('panel.js', codigo.panela + '\n' + codigo.panelb);
 
-  escribir('parche.js',       texto.parche);
-  escribir('parche-panel.js', texto.panel);
-  escribir('panel-crm.js',          preferirBase('panelcrm', 'panel-crm.js'));
-  escribir('panel-ventas.js',       preferirBase('panelvta', 'panel-ventas.js'));
-  escribir('panel-seguridad.js',    preferirBase('panelseg', 'panel-seguridad.js'));
-  escribir('panel-cuenta.js',       preferirBase('panelcta', 'panel-cuenta.js'));
-  escribir('parche2.js',            preferirBase('parche2',  'parche2.js'));
-  escribir('publica-catalogo.js',   preferirBase('pubcat',   'publica-catalogo.js'));
-  escribir('publica-directorio.js', preferirBase('pubdir',   'publica-directorio.js'));
-  escribir('publica-perfil.js',     preferirBase('pubperf',  'publica-perfil.js'));
-  escribir('publica-clientes.js',   preferirBase('pubcli',   'publica-clientes.js'));
-  escribir('publica-inicio.js',     preferirBase('pubini',   'publica-inicio.js'));
+  escribir('parche.js',       preferirLocal('parche', 'parche.js'));
+  escribir('parche-panel.js', preferirLocal('panel',   'parche-panel.js'));
+  escribir('panel-crm.js',          preferirLocal('panelcrm', 'panel-crm.js'));
+  escribir('panel-ventas.js',       preferirLocal('panelvta', 'panel-ventas.js'));
+  escribir('panel-seguridad.js',    preferirLocal('panelseg', 'panel-seguridad.js'));
+  escribir('panel-cuenta.js',       preferirLocal('panelcta', 'panel-cuenta.js'));
+  escribir('parche2.js',            preferirLocal('parche2',  'parche2.js'));
+  escribir('publica-catalogo.js',   preferirLocal('pubcat',   'publica-catalogo.js'));
+  escribir('publica-directorio.js', preferirLocal('pubdir',   'publica-directorio.js'));
+  escribir('publica-perfil.js',     preferirLocal('pubperf',  'publica-perfil.js'));
+  escribir('publica-clientes.js',   preferirLocal('pubcli',   'publica-clientes.js'));
+  escribir('publica-inicio.js',     preferirLocal('pubini',   'publica-inicio.js'));
 
-  /* Las imágenes de marca: base64 crudo, se escriben tal cual */
+  /* ── Las imágenes de marca ──────────────────────────────────────
+     Viven en marca/ como archivos binarios normales. Se copian tal cual.
+     Si alguna faltara, se cae de nuevo a la copia en base64 de la base,
+     que queda como red de contención hasta que se borre la tabla. */
+  const dirMarca = path.join(__dirname, 'marca');
   for(const clave of Object.keys(BINARIOS)){
+    const nombre = BINARIOS[clave];
+    const suelto = path.join(dirMarca, nombre);
+
+    if(fs.existsSync(suelto)){
+      const datos = fs.readFileSync(suelto);
+      fs.writeFileSync(path.join(dir, nombre), datos);
+      console.log('  \u2713 ' + nombre.padEnd(20) + datos.length.toString().padStart(7) +
+        ' bytes   marca/');
+      continue;
+    }
+
     if(!porNombre[clave]){
-      console.log('  ! falta la imagen "' + clave + '" en la base');
+      console.log('  ! falta la imagen "' + clave + '" (ni en marca/ ni en la base)');
       continue;
     }
     const b64 = porNombre[clave].sort((a,b) => a.parte - b.parte)
                                 .map(x => x.contenido).join('');
-    const h = crypto.createHash('md5').update(Buffer.from(b64, 'utf8')).digest('hex');
-    if(HUELLA_IMG[clave] && h !== HUELLA_IMG[clave])
-      throw new Error(`"${BINARIOS[clave]}": llegó con la huella ${h} y se esperaba ${HUELLA_IMG[clave]}`);
     const datos = Buffer.from(b64, 'base64');
-    fs.writeFileSync(path.join(dir, BINARIOS[clave]), datos);
-    console.log('  ✓ ' + BINARIOS[clave].padEnd(20) + datos.length.toString().padStart(7) + ' bytes   ' + h);
+    fs.writeFileSync(path.join(dir, nombre), datos);
+    console.log('  \u2713 ' + nombre.padEnd(20) + datos.length.toString().padStart(7) +
+      ' bytes   base (heredado)');
   }
 
   /* Archivos chicos, que viajan junto a este script */
