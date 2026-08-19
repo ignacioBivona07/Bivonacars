@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>AutoNet · Panel de Gestión</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230A2540'/><text y='23' x='16' text-anchor='middle' font-size='18' fill='white'>◈</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+body{overflow:hidden}
+.app{display:flex;height:100vh}
+/* La columna de secciones va en negro, con el dorado de la marca como acento. */
+.side{width:238px;background:#0B0B0A;color:#fff;display:flex;flex-direction:column;flex-shrink:0;
+  border-right:1px solid rgba(201,169,97,.16)}
+.side-brand{padding:20px 20px 18px;border-bottom:1px solid rgba(255,255,255,.09)}
+.side-brand .logo{display:flex;align-items:center;gap:10px;font-size:1.2rem;font-weight:800;letter-spacing:-.4px}
+/* En lugar del cuadrado azul va el pointer. El font-size:0 tapa el signo
+   que dibuja el panel adentro del recuadro. */
+.side-brand .mk{width:46px;height:26px;background:url('marca-pointer.webp') left center/contain no-repeat;
+  border-radius:0;font-size:0;flex-shrink:0}
+.side-brand .logo span{color:#C9A961}
+.side-brand small{display:block;color:#7A93B0;font-size:.68rem;margin-top:5px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700}
+.side-nav{flex:1;padding:12px 10px;overflow-y:auto}
+.side-lbl{font-size:.63rem;color:#5F7893;text-transform:uppercase;letter-spacing:1.1px;font-weight:800;padding:14px 12px 6px}
+.side-nav a{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;color:#B9CBE4;font-size:.87rem;font-weight:600;cursor:pointer;transition:.13s;margin-bottom:1px}
+.side-nav a:hover{background:rgba(255,255,255,.07);color:#fff}
+.side-nav a.on{background:linear-gradient(160deg,#D4B978,#A8853F);color:#14120C;
+  box-shadow:0 3px 12px rgba(0,0,0,.5)}
+.side-nav a:hover{background:rgba(201,169,97,.12);color:#F0E2C2}
+.side-lbl{color:#7A6B4B}
+.side-foot{border-top-color:rgba(201,169,97,.16)}
+.side-nav a .ic{width:19px;text-align:center;font-size:.95rem}
+.side-nav a .cnt{margin-left:auto;background:#DC2626;font-size:.68rem;padding:1px 7px;border-radius:9px;font-weight:800}
+.side-foot{padding:14px 16px;border-top:1px solid rgba(255,255,255,.09);font-size:.72rem;color:#5F7893}
+.side-foot b{color:#B9CBE4;display:block;margin-bottom:2px;font-size:.78rem}
+.side-foot button{background:rgba(255,255,255,.1);color:#B9CBE4;padding:5px 10px;border-radius:6px;font-size:.72rem;font-weight:700;margin-top:8px;width:100%}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar2{background:#fff;border-bottom:1px solid var(--line);padding:0 26px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar2 h1{font-size:1.18rem;font-weight:800;color:var(--navy);letter-spacing:-.4px}
+.topbar2 .sb{font-size:.76rem;color:var(--gray);font-weight:600;margin-top:1px}
+.content{flex:1;overflow-y:auto;padding:24px 26px 40px;background:var(--bg)}
+.kpi{position:relative;overflow:hidden}
+.kpi:before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue)}
+.kpi.g:before{background:var(--green)}.kpi.a:before{background:var(--amber)}.kpi.p:before{background:var(--purple)}
+.card-h{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.card-h h3{font-size:.98rem;font-weight:800;color:var(--navy)}
+.card-h .hint{font-size:.75rem;color:var(--gray);font-weight:600}
+.card-b{padding:20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.chartbox{position:relative;height:270px}
+.chartbox.sm{height:210px}
+.tbl-wrap{background:#fff;border:1px solid var(--line);border-radius:13px;overflow:hidden;box-shadow:var(--shadow)}
+.tbl-scroll{max-height:540px;overflow-y:auto}
+.tbl-wrap th{position:sticky;top:0;z-index:1}
+.docdots{display:flex;gap:3px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.dot.ok{background:var(--green)}.dot.no{background:#FCA5A5}
+.prog-bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden}
+.prog-bar i{display:block;height:100%;border-radius:4px;background:var(--blue)}
+.rank{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+.rank:last-child{border:none}
+.rank .pos{width:26px;height:26px;border-radius:7px;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800;font-size:.78rem;flex-shrink:0}
+.rank .nm{flex:1;font-weight:700;font-size:.87rem}
+.rank .vl{font-weight:800;color:var(--green);font-size:.87rem}
+.chk{display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;margin-bottom:6px}
+.chk input{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}
+#avisoError{position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#7F1D1D;color:#fff;padding:11px 16px;font:600 12px/1.55 system-ui,-apple-system,sans-serif;max-height:38vh;overflow:auto;box-shadow:0 -4px 18px rgba(0,0,0,.25)}
+#avisoError b{display:block;margin-bottom:3px;font-size:12.5px}
+#avisoError button{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;padding:4px 10px;font-weight:700;font-size:11px;margin-top:7px;cursor:pointer}
+@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}.side{width:64px}.side-brand small,.side-nav a span:not(.ic),.side-foot{display:none}}
+</style>
+</head>
+<body>
+
+<div id="raiz"><div style="display:grid;place-items:center;height:100vh;color:#64748B">Cargando…</div></div>
+
+<!-- Red de seguridad: si algo falla al dibujar el panel, se muestra el motivo
+     en pantalla en lugar de quedar en blanco o volver al formulario sin explicar. -->
+<script>
+(function(){
+  function avisar(texto){
+    var d = document.getElementById('avisoError');
+    if(!d){
+      d = document.createElement('div');
+      d.id = 'avisoError';
+      document.body.appendChild(d);
+    }
+    d.innerHTML = '<b>El panel encontró un problema técnico</b>' +
+      '<span></span><button onclick="location.reload()">Reintentar</button>';
+    d.querySelector('span').textContent = texto;
+  }
+  window.addEventListener('error', function(e){
+    avisar((e.message || 'Error desconocido') + (e.filename ? '  ·  ' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e.reason;
+    avisar((r && (r.message || r.error_description)) || String(r));
+  });
+})();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="appx.js"></script>
+<script src="panel.js"></script>
+<script src="parche-panel.js"></script>
+<script src="panel-crm.js"></script>
+<script src="panel-ventas.js"></script>
+<script src="panel-seguridad.js"></script>
+<script src="panel-cuenta.js"></script>
+</body>
+</html>

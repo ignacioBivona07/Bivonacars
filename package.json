@@ -1,0 +1,9 @@
+{
+  "name": "autonet",
+  "version": "1.0.1",
+  "private": true,
+  "description": "AutoNet — sitio público y panel de gestión",
+  "scripts": {
+    "build": "node build.js"
+  }
+}

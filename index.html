@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoNet — Autos usados con alguien que te acompaña</title>
+<meta name="description" content="Mirá los vehículos disponibles y elegí quién te atiende. Red de vendedores independientes en todo el país. Omnia possunt.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230F2A1E'/><text y='23' x='16' text-anchor='middle' font-size='17' fill='%23C9A961'>◈</text></svg>">
+<style>
+/* La barra de secciones va en negro, con el pointer en lugar del recuadro.
+   El font-size:0 tapa el signo que dibuja el guion adentro del recuadro.
+
+   Va con !important a propósito: la hoja de estilos de la web pública se
+   inyecta desde appx.js cuando arranca, o sea después de este bloque, y
+   con la misma prioridad ganaría la última en llegar. */
+.topbar{background:#0B0B0A !important;
+  border-bottom:1px solid rgba(201,169,97,.18) !important}
+.topbar .brand{color:#fff !important}
+.topbar .brand span{color:#C9A961 !important}
+.brand-mark{width:46px !important;height:26px !important;
+  background:url('marca-pointer.webp') left center/contain no-repeat !important;
+  border-radius:0 !important;font-size:0 !important;flex-shrink:0}
+.topnav a{color:#C7C2B6 !important}
+.topnav a:hover{color:#fff !important}
+.topnav a.on{color:#C9A961 !important;border-bottom-color:#C9A961 !important}
+#authArea .btn-o{border-color:rgba(201,169,97,.5) !important;color:#E4D9BE !important}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand" onclick="ir('landing')"><div class="brand-mark">◈</div>Auto<span>Net</span></div>
+  <div class="topnav" id="nav"></div>
+  <div id="authArea"></div>
+</div>
+<div id="app"><div style="padding:80px;text-align:center;color:#64748B">Cargando…</div></div>
+<footer>
+  <b>AutoNet</b> — Red de vendedores independientes de vehículos
+  <div style="margin-top:7px;font-size:.72rem;letter-spacing:3.5px;color:#C9A961;font-weight:700">OMNIA POSSUNT</div>
+  <div style="margin-top:12px;font-size:.74rem">
+    <a onclick="verLegal('terminos')" style="cursor:pointer;color:#7FB0F5;font-weight:600">Términos y condiciones</a>
+    <span style="opacity:.4"> · </span>
+    <a onclick="verLegal('privacidad')" style="cursor:pointer;color:#7FB0F5;font-weight:600">Política de privacidad</a>
+    <span style="opacity:.4"> · </span>
+    <a onclick="verLegal('contrato')" style="cursor:pointer;color:#7FB0F5;font-weight:600">Acuerdo de colaboración</a>
+  </div>
+  <div style="margin-top:8px;font-size:.68rem;opacity:.55">
+    Intermediación en la compraventa de vehículos usados. Los precios pueden variar sin previo aviso.
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="appx.js"></script>
+<script src="publica.js"></script>
+<script src="parche.js"></script>
+<script src="parche2.js"></script>
+<script src="publica-catalogo.js"></script>
+<script src="publica-directorio.js"></script>
+<script src="publica-perfil.js"></script>
+<script src="publica-clientes.js"></script>
+<script src="publica-inicio.js"></script>
+</body>
+</html>
