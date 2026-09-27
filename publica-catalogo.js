@@ -200,6 +200,7 @@ window.verAuto = function(id){
       dato('Garantía de fábrica hasta', v.garantia_hasta)+
       dato('Transferencia a cargo de', v.transferencia_a_cargo)+
       dato('Se puede ver', v.disponible_para_ver)+
+      dato('Test drive', v.test_drive===true ? 'Sí' : (v.test_drive===false ? 'No' : ''))+
     '</div>'+
 
     (v.equipamiento && v.equipamiento.length
