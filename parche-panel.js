@@ -734,7 +734,7 @@ window.guardarCampana = async function(id){
 };
 
 /* ═══════════════ ESTADÍSTICAS Y GASTOS ═══════════════ */
-function vistaEstadisticas(){
+function vistaStatsMes(){
   if(!puedo('estadisticas')) return sinPermiso('estadísticas');
 
   var cot = Number(config.cotizacion_dolar ? config.cotizacion_dolar.valor : 0) || 0;
@@ -809,6 +809,338 @@ function vistaEstadisticas(){
           }).join('')+'</tbody></table>'
         : '<div class="mini">No hay gastos cargados en este período.</div>')+
     '</div>';
+}
+
+/* ═══════════════ ESTADÍSTICAS: SUB-VISTAS ═══════════════
+   La pantalla de estadísticas era una sola foto del mes. Ahora son cuatro
+   miradas sobre los mismos datos reales (operaciones, gastos, cupos), sin
+   inventar ninguna cifra: si un dato no está cargado, se dice que falta en
+   vez de rellenarlo. */
+
+var statsVista = 'mes';
+window.cambiarStats = function(v){ statsVista = v; render(); };
+
+function cotHoy(){ return Number(config.cotizacion_dolar ? config.cotizacion_dolar.valor : 0) || 0; }
+
+/* Pasa un monto a pesos con la cotización que quedó guardada en esa misma
+   fila (la del día en que se cerró). Si esa fila no la guardó, usa la de
+   hoy, que es lo mejor que se puede hacer sin inventar un número. */
+function enArs(monto, moneda, cotFila){
+  var m = Number(monto) || 0;
+  if(String(moneda || '').toUpperCase() !== 'USD') return m;
+  var c = Number(cotFila) || cotHoy();
+  return m * c;
+}
+function montoUsd(n){ return 'USD ' + Math.round(Number(n)||0).toLocaleString('es-AR'); }
+function nombrePerfil(id){
+  var p = (D.perfiles||[]).filter(function(x){ return x.id === id; })[0];
+  return p ? ((p.nombre||'') + ' ' + (p.apellido||'')).trim() : null;
+}
+function ultimosMeses(n){
+  var out = [];
+  for(var i=n-1;i>=0;i--){
+    var d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
+    out.push(d.toISOString().slice(0,7));
+  }
+  return out;
+}
+function diasEntre(desde, hasta){
+  if(!desde || !hasta) return null;
+  var a = new Date(String(desde).slice(0,10)), b = new Date(String(hasta).slice(0,10));
+  if(isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
+function mesDePago(p){ return String(p.acreditado_en || p.creado_en || p.fecha || '').slice(0,7); }
+function vacio(texto){ return '<div class="mini">'+texto+'</div>'; }
+
+function vistaEstadisticas(){
+  if(!puedo('estadisticas')) return sinPermiso('estadísticas');
+
+  var pestanas = [['mes','Mes a mes'],['comisionistas','Por comisionista'],
+                  ['vehiculos','Por vehículo'],['caja','Flujo de caja']];
+
+  var barra = '<div style="max-width:1040px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'+
+    pestanas.map(function(p){
+      return '<button class="btn btn-sm '+(statsVista===p[0]?'':'btn-o')+'" '+
+             'onclick="cambiarStats(\''+p[0]+'\')">'+p[1]+'</button>';
+    }).join('')+'</div>';
+
+  var cuerpo = statsVista === 'comisionistas' ? vistaStatsComisionistas()
+             : statsVista === 'vehiculos'     ? vistaStatsVehiculos()
+             : statsVista === 'caja'          ? vistaStatsCaja()
+             : vistaStatsMes();
+
+  return barra + cuerpo;
+}
+
+/* ── Por comisionista ───────────────────────────────────────────────
+   Cuánto movió cada uno, cuánto se llevó y cuánto te dejó. Todo en
+   dinero: en ninguna pantalla se habla de porcentajes de comisión. */
+function vistaStatsComisionistas(){
+  var ops = D.operaciones || [];
+
+  var acum = {};
+  function fila(id){
+    if(!acum[id]) acum[id] = { id:id, ventas:0, volumen:0, vendedor:0, empresa:0,
+                               vendedorUsd:0, empresaUsd:0, cupos:0, ultima:null };
+    return acum[id];
+  }
+
+  ops.forEach(function(o){
+    var r = fila(o.usuario_id || 'sin');
+    r.ventas++;
+    r.volumen     += enArs(o.precio, o.moneda, o.cotizacion);
+    r.vendedorUsd += Number(o.com_vendedor) || 0;
+    r.empresaUsd  += Number(o.com_empresa)  || 0;
+    r.vendedor    += enArs(o.com_vendedor, 'USD', o.cotizacion);
+    r.empresa     += enArs(o.com_empresa,  'USD', o.cotizacion);
+    if(!r.ultima || String(o.fecha) > String(r.ultima)) r.ultima = o.fecha;
+  });
+
+  (D.pagos||[]).filter(function(p){ return p.estado === 'aprobado'; })
+    .forEach(function(p){ fila(p.usuario_id || 'sin').cupos += Number(p.monto_ars) || 0; });
+
+  var filas = Object.keys(acum).map(function(k){ return acum[k]; })
+    .sort(function(a,b){ return (b.empresa + b.cupos) - (a.empresa + a.cupos); });
+
+  var conVentas = filas.filter(function(f){ return f.ventas > 0; });
+  var totVol  = filas.reduce(function(s,f){ return s + f.volumen; }, 0);
+  var totVend = filas.reduce(function(s,f){ return s + f.vendedor; }, 0);
+  var totEmp  = filas.reduce(function(s,f){ return s + f.empresa; }, 0);
+  var totCup  = filas.reduce(function(s,f){ return s + f.cupos; }, 0);
+
+  var activos = {};
+  filas.forEach(function(f){ if(f.ventas > 0 || f.cupos > 0) activos[f.id] = true; });
+  var dormidos = (D.perfiles||[]).filter(function(p){
+    return !p.es_dueno && p.estado_verificacion === 'verificado' && !activos[p.id]; });
+
+  return '<div style="max-width:1040px">'+
+
+    '<div class="note w" style="margin-bottom:18px"><b>Qué mirás acá.</b> '+
+    'El historial completo de cada comisionista, no el del mes. <b>Movió</b> es el precio de '+
+    'los autos que cerró; <b>se llevó</b> es la comisión que le corresponde a él; <b>te dejó</b> '+
+    'es lo que queda del lado de la empresa. Los montos en dólares se pasan a pesos con la '+
+    'cotización del día de cada venta, no con la de hoy.</div>'+
+
+    '<div class="kpis" style="margin-bottom:18px">'+
+      '<div class="kpi"><div class="lb">Comisionistas que vendieron</div><div class="vl">'+conVentas.length+'</div>'+
+        '<div class="df">'+ops.length+' ventas en total</div></div>'+
+      '<div class="kpi a"><div class="lb">Volumen movido</div><div class="vl">'+pesos(totVol)+'</div>'+
+        '<div class="df">'+(ops.length?pesos(totVol/ops.length)+' por venta':'sin ventas')+'</div></div>'+
+      '<div class="kpi p"><div class="lb">Pagado a comisionistas</div><div class="vl">'+pesos(totVend)+'</div>'+
+        '<div class="df">'+montoUsd(filas.reduce(function(s,f){ return s+f.vendedorUsd; },0))+'</div></div>'+
+      '<div class="kpi g"><div class="lb">Te quedó a vos</div><div class="vl">'+pesos(totEmp + totCup)+'</div>'+
+        '<div class="df">'+montoUsd(filas.reduce(function(s,f){ return s+f.empresaUsd; },0))+' + cupos '+pesos(totCup)+'</div></div>'+
+    '</div>'+
+
+    tarjeta('Rendimiento de cada comisionista','Historial completo',
+      filas.length
+        ? '<table><thead><tr><th>Comisionista</th><th>Ventas</th><th>Movió</th>'+
+          '<th>Se llevó</th><th>Te dejó</th><th>Cupos</th><th>Última venta</th></tr></thead><tbody>'+
+          filas.map(function(f){
+            var nom = f.id === 'sin' ? 'Ventas sin comisionista' : (nombrePerfil(f.id) || 'Perfil dado de baja');
+            return '<tr>'+
+              '<td><b>'+esc(nom)+'</b>'+
+                (f.ventas ? '<div class="mini">ticket '+pesos(f.volumen/f.ventas)+'</div>' : '')+'</td>'+
+              '<td>'+f.ventas+'</td>'+
+              '<td>'+pesos(f.volumen)+'</td>'+
+              '<td>'+pesos(f.vendedor)+'<div class="mini">'+montoUsd(f.vendedorUsd)+'</div></td>'+
+              '<td><b>'+pesos(f.empresa)+'</b><div class="mini">'+montoUsd(f.empresaUsd)+'</div></td>'+
+              '<td>'+(f.cupos ? pesos(f.cupos) : '—')+'</td>'+
+              '<td>'+(f.ultima ? fmtFecha(f.ultima) : '—')+'</td></tr>';
+          }).join('')+'</tbody></table>'
+        : vacio('Todavía no hay ventas cerradas ni cupos cobrados.'))+
+
+    tarjeta('Verificados que todavía no arrancaron', dormidos.length ? dormidos.length+' personas' : '',
+      dormidos.length
+        ? '<div class="mini" style="margin-bottom:10px">Están aprobados y con acceso al panel, pero no '+
+          'registran ninguna venta ni pagaron cupo. Son los que conviene llamar antes de salir a buscar gente nueva.</div>'+
+          '<table><thead><tr><th>Nombre</th><th>Alta</th><th>Teléfono</th></tr></thead><tbody>'+
+          dormidos.slice(0,25).map(function(p){
+            return '<tr><td><b>'+esc(((p.nombre||'')+' '+(p.apellido||'')).trim())+'</b></td>'+
+              '<td>'+(p.creado_en ? fmtFecha(String(p.creado_en).slice(0,10)) : '—')+'</td>'+
+              '<td>'+esc(p.tel || p.wa_tel || '—')+'</td></tr>';
+          }).join('')+'</tbody></table>'+
+          (dormidos.length > 25 ? '<div class="mini" style="margin-top:8px">y '+(dormidos.length-25)+' más</div>' : '')
+        : vacio('Todos los comisionistas verificados tienen actividad. Bien ahí.'))+
+  '</div>';
+}
+
+/* ── Por vehículo ───────────────────────────────────────────────────
+   Qué unidad dejó plata y cuánto tardó en salir. El dato que más
+   importa acá no es el precio: es el tiempo que el auto estuvo parado. */
+function vistaStatsVehiculos(){
+  var porId = {};
+  (D.vehiculos||[]).forEach(function(v){ porId[v.id] = v; });
+  var hoyStr = new Date().toISOString().slice(0,10);
+
+  var vendidos = (D.operaciones||[]).map(function(o){
+    var v = o.vehiculo_id ? porId[o.vehiculo_id] : null;
+    var alta = v ? (v.ingreso || String(v.creado_en||'').slice(0,10)) : null;
+    return {
+      desc:    o.vehiculo_desc || (v ? (v.marca+' '+v.modelo) : 'Vehículo sin identificar'),
+      fecha:   o.fecha,
+      precio:  enArs(o.precio, o.moneda, o.cotizacion),
+      empresa: enArs(o.com_empresa, 'USD', o.cotizacion),
+      empresaUsd: Number(o.com_empresa) || 0,
+      dias:    diasEntre(alta, o.fecha),
+      gama:    v ? v.gama : null,
+      propio:  v ? !!v.es_propio : false,
+      quien:   nombrePerfil(o.usuario_id)
+    };
+  }).sort(function(a,b){ return b.empresa - a.empresa; });
+
+  var conDias = vendidos.filter(function(x){ return x.dias !== null; });
+  var promDias = conDias.length
+    ? conDias.reduce(function(s,x){ return s + x.dias; }, 0) / conDias.length : null;
+
+  var enStock = (D.vehiculos||[]).filter(function(v){
+    return v.estado === 'disponible' || v.estado === 'pausado'; })
+    .map(function(v){
+      return { v:v, dias: diasEntre(v.ingreso || String(v.creado_en||'').slice(0,10), hoyStr),
+               valor: enArs(v.precio, v.moneda, v.cotizacion) };
+    }).sort(function(a,b){ return (b.dias||0) - (a.dias||0); });
+
+  var valorStock = enStock.reduce(function(s,x){ return s + x.valor; }, 0);
+  var totEmpresa = vendidos.reduce(function(s,x){ return s + x.empresa; }, 0);
+  var quietos = enStock.filter(function(x){ return x.dias !== null && x.dias >= 60; });
+
+  return '<div style="max-width:1040px">'+
+
+    '<div class="note w" style="margin-bottom:18px"><b>Qué mirás acá.</b> '+
+    'Cada unidad vendida con lo que dejó y cuántos días estuvo publicada antes de salir. '+
+    'Los días se cuentan desde que el auto entró al sistema hasta la fecha de la venta: si una '+
+    'unidad no tiene fecha de ingreso cargada, aparece con un guión en vez de un número inventado.</div>'+
+
+    '<div class="kpis" style="margin-bottom:18px">'+
+      '<div class="kpi g"><div class="lb">Dejaron los vendidos</div><div class="vl">'+pesos(totEmpresa)+'</div>'+
+        '<div class="df">'+vendidos.length+' unidades</div></div>'+
+      '<div class="kpi a"><div class="lb">Días hasta vender</div>'+
+        '<div class="vl">'+(promDias===null?'—':Math.round(promDias))+'</div>'+
+        '<div class="df">'+(promDias===null?'falta cargar la fecha de ingreso':'promedio de '+conDias.length+' ventas')+'</div></div>'+
+      '<div class="kpi"><div class="lb">Stock publicado</div><div class="vl">'+pesos(valorStock)+'</div>'+
+        '<div class="df">'+enStock.length+' unidades</div></div>'+
+      '<div class="kpi '+(quietos.length?'p':'')+'"><div class="lb">Parados hace 60+ días</div>'+
+        '<div class="vl">'+quietos.length+'</div>'+
+        '<div class="df">'+(quietos.length?'revisar precio o fotos':'ninguno')+'</div></div>'+
+    '</div>'+
+
+    tarjeta('Unidades vendidas','De la que más dejó a la que menos',
+      vendidos.length
+        ? '<table><thead><tr><th>Vehículo</th><th>Vendido</th><th>Precio</th>'+
+          '<th>Te dejó</th><th>Días en stock</th><th>Cerró</th></tr></thead><tbody>'+
+          vendidos.map(function(x){
+            return '<tr><td><b>'+esc(x.desc)+'</b>'+
+              (x.propio ? '<div class="mini">unidad propia</div>' :
+               (x.gama ? '<div class="mini">gama '+esc(x.gama)+'</div>' : ''))+'</td>'+
+              '<td>'+fmtFecha(x.fecha)+'</td>'+
+              '<td>'+pesos(x.precio)+'</td>'+
+              '<td><b>'+pesos(x.empresa)+'</b><div class="mini">'+montoUsd(x.empresaUsd)+'</div></td>'+
+              '<td>'+(x.dias === null ? '—' : x.dias)+'</td>'+
+              '<td>'+esc(x.quien || 'sin comisionista')+'</td></tr>';
+          }).join('')+'</tbody></table>'
+        : vacio('Todavía no hay ventas cerradas.'))+
+
+    tarjeta('Lo que está publicado hoy','Del más parado al más nuevo',
+      enStock.length
+        ? '<table><thead><tr><th>Vehículo</th><th>Precio</th><th>Días publicado</th><th>Estado</th></tr></thead><tbody>'+
+          enStock.map(function(x){
+            var v = x.v, alerta = x.dias !== null && x.dias >= 60;
+            return '<tr><td><b>'+esc((v.marca||'')+' '+(v.modelo||''))+'</b>'+
+              '<div class="mini">'+esc(v.anio||'')+(v.km?' · '+Number(v.km).toLocaleString('es-AR')+' km':'')+'</div></td>'+
+              '<td>'+pesos(x.valor)+'</td>'+
+              '<td>'+(x.dias === null ? '—' :
+                 (alerta ? '<span class="pill p-red">'+x.dias+' días</span>' : x.dias))+'</td>'+
+              '<td>'+(v.estado === 'pausado' ? '<span class="pill p-amber">Pausado</span>'
+                                             : '<span class="pill p-green">Publicado</span>')+'</td></tr>';
+          }).join('')+'</tbody></table>'
+        : vacio('No hay vehículos publicados en este momento.'))+
+  '</div>';
+}
+
+/* ── Flujo de caja ──────────────────────────────────────────────────
+   Plata que entró y salió de verdad, mes por mes. Un gasto cargado y
+   sin pagar no descuenta hasta que se marca pagado: eso es lo que
+   separa el flujo de caja del resultado contable. */
+function vistaStatsCaja(){
+  var meses = ultimosMeses(12);
+
+  var filas = meses.map(function(m){
+    var ops = (D.operaciones||[]).filter(function(o){ return String(o.fecha).slice(0,7) === m; });
+    var comisiones = ops.reduce(function(s,o){ return s + enArs(o.com_empresa,'USD',o.cotizacion); }, 0);
+
+    var cuposMes = (D.pagos||[]).filter(function(p){
+      return p.estado === 'aprobado' && mesDePago(p) === m; });
+    var cupos = cuposMes.reduce(function(s,p){ return s + (Number(p.monto_ars)||0); }, 0);
+
+    var gm = gastos.filter(function(g){ return String(g.fecha).slice(0,7) === m; });
+    var salidas  = gm.filter(function(g){ return g.pagado; })
+      .reduce(function(s,g){ return s + enArs(g.monto,g.moneda,g.cotizacion); }, 0);
+    var adeudado = gm.filter(function(g){ return !g.pagado; })
+      .reduce(function(s,g){ return s + enArs(g.monto,g.moneda,g.cotizacion); }, 0);
+
+    return { mes:m, ventas:ops.length, comisiones:comisiones, cupos:cupos,
+             salidas:salidas, adeudado:adeudado, neto: comisiones + cupos - salidas };
+  });
+
+  var acumulado = 0;
+  filas.forEach(function(f){ acumulado += f.neto; f.acum = acumulado; });
+
+  var conMovimiento = filas.filter(function(f){
+    return f.comisiones || f.cupos || f.salidas || f.adeudado; });
+  var mejor = filas.slice().sort(function(a,b){ return b.neto - a.neto; })[0];
+  var deuda = filas.reduce(function(s,f){ return s + f.adeudado; }, 0);
+  var promedio = conMovimiento.length
+    ? filas.reduce(function(s,f){ return s + f.neto; }, 0) / conMovimiento.length : 0;
+  var tope = Math.max.apply(null, [1].concat(filas.map(function(f){
+    return Math.max(f.comisiones + f.cupos, f.salidas); })));
+
+  function barra(valor, color){
+    var ancho = Math.min(100, (valor / tope) * 100);
+    return '<div style="height:7px;border-radius:4px;background:#EEF2F7;overflow:hidden;margin-top:4px">'+
+      '<div style="height:100%;width:'+ancho.toFixed(1)+'%;background:'+color+'"></div></div>';
+  }
+
+  return '<div style="max-width:1040px">'+
+
+    '<div class="note w" style="margin-bottom:18px"><b>Qué mirás acá.</b> '+
+    'Los últimos doce meses de plata que entró y salió de verdad. Un gasto que cargaste pero '+
+    'todavía no pagaste <b>no</b> resta acá: aparece aparte, en la columna <b>Sin pagar</b>, '+
+    'hasta que lo marcás pagado. El <b>acumulado</b> arrastra el resultado mes a mes, así ves '+
+    'si el negocio viene juntando o gastando.</div>'+
+
+    '<div class="kpis" style="margin-bottom:18px">'+
+      '<div class="kpi '+(acumulado>=0?'g':'p')+'"><div class="lb">Acumulado 12 meses</div>'+
+        '<div class="vl">'+pesos(acumulado)+'</div>'+
+        '<div class="df '+(acumulado<0?'n':'')+'">'+(acumulado>=0?'a favor':'en rojo')+'</div></div>'+
+      '<div class="kpi a"><div class="lb">Promedio por mes</div><div class="vl">'+pesos(promedio)+'</div>'+
+        '<div class="df">'+(conMovimiento.length||0)+' meses con movimiento</div></div>'+
+      '<div class="kpi"><div class="lb">Mejor mes</div>'+
+        '<div class="vl">'+(mejor && mejor.neto ? pesos(mejor.neto) : '—')+'</div>'+
+        '<div class="df">'+(mejor && mejor.neto ? mejor.mes : 'sin datos todavía')+'</div></div>'+
+      '<div class="kpi '+(deuda?'p':'')+'"><div class="lb">Sin pagar</div><div class="vl">'+pesos(deuda)+'</div>'+
+        '<div class="df">'+(deuda?'ya cargado, todavía no salió':'nada pendiente')+'</div></div>'+
+    '</div>'+
+
+    tarjeta('Mes a mes','Últimos 12 meses',
+      '<table><thead><tr><th>Mes</th><th>Comisiones</th><th>Cupos</th><th>Salidas</th>'+
+      '<th>Neto</th><th>Acumulado</th><th>Sin pagar</th></tr></thead><tbody>'+
+      filas.slice().reverse().map(function(f){
+        var hay = f.comisiones || f.cupos || f.salidas || f.adeudado;
+        return '<tr'+(hay?'':' style="opacity:.45"')+'>'+
+          '<td><b>'+f.mes+'</b>'+(f.ventas?'<div class="mini">'+f.ventas+' venta'+(f.ventas>1?'s':'')+'</div>':'')+'</td>'+
+          '<td>'+pesos(f.comisiones)+barra(f.comisiones + f.cupos, '#059669')+'</td>'+
+          '<td>'+(f.cupos?pesos(f.cupos):'—')+'</td>'+
+          '<td>'+pesos(f.salidas)+barra(f.salidas, '#DC2626')+'</td>'+
+          '<td><b'+(f.neto<0?' style="color:#DC2626"':'')+'>'+pesos(f.neto)+'</b></td>'+
+          '<td'+(f.acum<0?' style="color:#DC2626"':'')+'>'+pesos(f.acum)+'</td>'+
+          '<td>'+(f.adeudado?'<span class="pill p-red">'+pesos(f.adeudado)+'</span>':'—')+'</td></tr>';
+      }).join('')+'</tbody></table>')+
+
+    '<div class="note" style="margin-bottom:18px"><b>Un mes vacío no es un error.</b> '+
+    'Los meses en gris no tienen ni una venta ni un gasto cargado. Si sabés que hubo movimiento '+
+    'y no aparece, lo que falta es cargarlo: el panel no adivina nada que no esté en el sistema.</div>'+
+  '</div>';
 }
 
 window.cambiarPeriodo = function(p){ periodo = p; render(); };
@@ -1126,7 +1458,7 @@ SECCIONES.marketing.f     = vistaMarketing;
 SECCIONES.marketing.post  = null;
 SECCIONES.estadisticas.f  = vistaEstadisticas;
 SECCIONES.estadisticas.post = null;
-SECCIONES.estadisticas.s  = 'Ingresos, gastos y resultado real del mes';
+SECCIONES.estadisticas.s  = 'Resultado del mes, comisionistas, vehículos y flujo de caja';
 SECCIONES.marketing.s     = 'Campañas, inversión y retorno medido';
 SECCIONES.configuracion   = { t:'Configuración', s:'Cotización del dólar y precio de los cupos', f:vistaConfiguracion };
 SECCIONES.equipo          = { t:'Equipo del panel', s:'Quién entra y qué puede hacer', f:vistaEquipo };
