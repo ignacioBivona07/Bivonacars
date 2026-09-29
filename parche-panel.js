@@ -1398,6 +1398,165 @@ window.guardarPermisos = async function(id, quitar){
   toast(quitar ? 'Se le quitó el acceso al panel' : 'Permisos actualizados','ok');
 };
 
+/* ═══════════════ FISCAL: EL CAE, QUE ES LO QUE HACE QUE UNA FACTURA EXISTA ═══
+   La pantalla Fiscal genera un número interno correlativo (0001-00000001) y lo
+   guarda en `facturas`. Eso es un registro de gestión y nada más: no tiene CAE,
+   no existe para ARCA y no respalda el ingreso. El cartel que había decía que
+   "el sistema registra el comprobante" y que el CAE llegaría al conectar los
+   webservices, lo cual se lee como si faltara un trámite técnico cuando lo que
+   falta es emitir la factura. Eso es un malentendido caro.
+
+   Acá se hacen dos cosas: se dice con todas las letras qué es cada número, y se
+   deja dónde pegar el CAE real una vez emitido en Comprobantes en línea, para
+   que el registro interno quede atado al comprobante verdadero.
+
+   Ver BIVONACARS-FORMALIZACION.md §4. */
+
+var AVISO_NO_FISCAL =
+  '<div class="note r" style="margin-bottom:18px">' +
+  '<b>Los números de esta pantalla no son facturas.</b> ' +
+  'El sistema arma un número interno correlativo para tu propio control. ' +
+  'Una factura existe cuando ARCA le da un <b>CAE</b>: sin CAE no hay comprobante, ' +
+  'no respalda el ingreso y no sirve para el cliente. ' +
+  'La factura real se emite en <b>Comprobantes en línea</b> (ARCA, con Clave Fiscal nivel 3) ' +
+  'y después se pega el CAE acá abajo, para que el registro interno quede atado al comprobante.' +
+  '<div style="margin-top:8px;font-size:.8rem">' +
+  'Desde el <b>1 de diciembre de 2026</b> ARCA puede rechazar el pedido de CAE si falta la ' +
+  'condición frente al IVA del receptor (RG 5616). Emitiendo a mano en Comprobantes en línea ' +
+  'el sistema te lo pide solo.</div></div>';
+
+function fechaCorta(f){
+  if(!f) return '—';
+  var p = String(f).slice(0,10).split('-');
+  return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : String(f);
+}
+function importe(n){
+  return 'USD ' + Math.round(Number(n)||0).toLocaleString('es-AR');
+}
+
+/* Un CAE vence: ARCA lo autoriza con una fecha hasta la que el comprobante
+   puede entregarse. Se avisa cuando ya pasó, sin inventar ninguna regla. */
+function estadoCae(f){
+  if(!f.cae) return { pill:'p-red', txt:'Sin CAE' };
+  if(f.cae_vence && String(f.cae_vence).slice(0,10) < new Date().toISOString().slice(0,10))
+    return { pill:'p-amber', txt:'CAE vencido' };
+  return { pill:'p-green', txt:'Con CAE' };
+}
+
+function vistaCae(){
+  var lista = (typeof D !== 'undefined' && D.facturas) ? D.facturas : [];
+  var sinCae = lista.filter(function(f){ return !f.cae; });
+
+  if(!lista.length){
+    return tarjeta('Comprobantes y su CAE',
+      'El CAE se pega acá después de emitir en ARCA',
+      '<div class="mini">Todavía no registraste ningún comprobante. ' +
+      'Cuando registres uno, acá vas a poder pegarle el CAE que devuelva ARCA.</div>');
+  }
+
+  var resumen = sinCae.length
+    ? '<div class="note r" style="margin-bottom:14px"><b>' + sinCae.length + ' de ' + lista.length +
+      ' ' + (sinCae.length === 1 ? 'registro no tiene' : 'registros no tienen') + ' CAE.</b> ' +
+      'Para ARCA ' + (sinCae.length === 1 ? 'ese ingreso no está facturado' :
+      'esos ingresos no están facturados') + '.</div>'
+    : '<div class="note g" style="margin-bottom:14px"><b>Todos los registros tienen su CAE.</b> ' +
+      'Cada número interno está atado a un comprobante real de ARCA.</div>';
+
+  var filas = lista.map(function(f){
+    var e = estadoCae(f);
+    return '<tr>' +
+      '<td><b>' + esc(f.nro || '—') + '</b><div class="mini">interno</div></td>' +
+      '<td>' + fechaCorta(f.fecha) + '</td>' +
+      '<td class="mini">' + esc(f.cliente || '—') + '</td>' +
+      '<td style="font-weight:800">' + importe(f.monto) + '</td>' +
+      '<td><span class="pill ' + e.pill + '">' + e.txt + '</span></td>' +
+      '<td>' + (f.cae
+        ? '<b style="font-family:Consolas,monospace;letter-spacing:.5px">' + esc(f.cae) + '</b>' +
+          '<div class="mini">' + (f.nro_arca ? 'ARCA ' + esc(f.nro_arca) + ' · ' : '') +
+          (f.cae_vence ? 'vence ' + fechaCorta(f.cae_vence) : 'sin fecha de vencimiento') + '</div>'
+        : '<span class="mini">no existe para ARCA</span>') + '</td>' +
+      '<td><button class="btn ' + (f.cae ? 'btn-o ' : '') + 'btn-sm" onclick="registrarCae(' + f.id + ')">' +
+        (f.cae ? 'Editar' : 'Pegar CAE') + '</button></td></tr>';
+  }).join('');
+
+  return '<div class="card" style="margin-bottom:18px">' +
+    '<div class="card-h"><h3>Comprobantes y su CAE</h3>' +
+    '<span class="hint">Un número interno sin CAE no es una factura</span></div>' +
+    '<div class="card-b">' + resumen + '</div>' +
+    '<div class="card-b" style="padding:0"><table>' +
+    '<thead><tr><th>Número interno</th><th>Fecha</th><th>Cliente</th><th>Importe</th>' +
+    '<th>Estado</th><th>CAE de ARCA</th><th></th></tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div></div>';
+}
+
+window.registrarCae = function(id){
+  var f = ((typeof D !== 'undefined' && D.facturas) || []).filter(function(x){ return x.id === id; })[0];
+  if(!f) return;
+  modal('CAE del comprobante ' + esc(f.nro || ''),
+    '<div class="note" style="margin-bottom:16px">' +
+    'Emití la factura en <b>Comprobantes en línea</b> de ARCA y pegá acá lo que te devuelve. ' +
+    'El número interno <b>' + esc(f.nro || '') + '</b> no se toca: queda como referencia tuya.</div>' +
+    campo('CAE que devolvió ARCA', 'caeNro', 'text',
+      'placeholder="14 dígitos" inputmode="numeric" value="' + esc(f.cae || '') + '"', true) +
+    campo('Vencimiento del CAE', 'caeVence', 'date',
+      'value="' + esc(f.cae_vence ? String(f.cae_vence).slice(0,10) : '') + '"') +
+    campo('Número del comprobante en ARCA', 'caeArca', 'text',
+      'placeholder="00001-00000001" value="' + esc(f.nro_arca || '') + '"') +
+    '<div class="mini">El CAE tiene 14 dígitos. Si todavía no emitiste la factura, cerrá esto: ' +
+    'no hay nada que pegar.</div>',
+    [{txt:'Cancelar', clase:'btn-o', fn:'cerrarModal()'},
+     {txt:'Guardar CAE', clase:'btn-green', fn:'guardarCae(' + f.id + ')'}]);
+};
+
+window.guardarCae = async function(id){
+  var cae = val('caeNro').replace(/[\s-]/g,'');
+  if(!cae) return toast('Pegá el CAE que devolvió ARCA', 'error');
+  if(!/^\d{14}$/.test(cae))
+    return toast('El CAE de ARCA tiene 14 dígitos, sin espacios ni guiones', 'error');
+
+  var vence = val('caeVence') || null;
+  var arca  = val('caeArca')  || null;
+  cerrarModal();
+  cargando(true, 'Guardando el CAE…');
+  var r = await sb.from('facturas')
+    .update({ cae:cae, cae_vence:vence, nro_arca:arca }).eq('id', id);
+  if(r.error){ cargando(false); return toast(mensajeError(r.error), 'error'); }
+  await cargarTodo();
+  cargando(false);
+  render();
+  toast('CAE guardado — el comprobante quedó atado a la factura de ARCA', 'ok');
+};
+
+/* La vista Fiscal vive en panel.js y está minificada: en vez de rehacerla, se
+   corrige el texto que engaña y se le cuelga la tabla del CAE al final. Cada
+   reemplazo es literal y se verifica que haya entrado; si alguna vez cambia el
+   original, el cartel igual queda arriba y nada se rompe. */
+var CORRECCIONES_FISCAL = [
+  /* el cartel que decía que faltaba conectar webservices */
+  ['<div class="note" style="margin-bottom:18px"><b>Emisión de facturas.</b> El sistema registra ' +
+   'el comprobante en la base. Para obtener el CAE oficial hay que conectar los Web Services de ' +
+   'AFIP (WSFEv1) con certificado digital — es el paso siguiente cuando tengas la inscripción ' +
+   'activa.</div>', ''],
+  /* nada de esto se "emitió": se registró */
+  ['<h3>Facturas emitidas</h3>', '<h3>Registro interno de comprobantes</h3>'],
+  ['🧾 Emitir factura', '🧾 Registrar comprobante interno'],
+  ['comprobantes emitidos', 'registros internos'],
+  ['>Facturado<', '>Registrado (sin CAE no está facturado)<'],
+  ['>Próximo comprobante<', '>Próximo número interno<'],
+  ['Todavía no emitiste facturas', 'Todavía no registraste ningún comprobante']
+];
+
+if(typeof SECCIONES !== 'undefined' && SECCIONES.fiscal){
+  var fiscalPrevio = SECCIONES.fiscal.f;
+  SECCIONES.fiscal.s = 'Registro interno, CAE de ARCA e impuestos';
+  SECCIONES.fiscal.f = function(){
+    var html = fiscalPrevio.apply(this, arguments);
+    CORRECCIONES_FISCAL.forEach(function(c){ html = html.split(c[0]).join(c[1]); });
+    return AVISO_NO_FISCAL + html + vistaCae();
+  };
+}
+
+
 /* ═══════════════ ENGANCHE ═══════════════ */
 async function cargarConfig(){
   var r = await sb.from('config').select('*');
