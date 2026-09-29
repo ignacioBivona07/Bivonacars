@@ -152,6 +152,50 @@ function tarjeta(v){
    LA FICHA COMPLETA
    ═══════════════════════════════════════════════════════════════ */
 
+/* ── Jerarquía tipográfica de la ficha ──────────────────────────────────
+   Cambio 1 de BIVONACARS-DISENO.md. El lujo se lee en el espacio en blanco,
+   no en la cantidad de dorado: el nombre del vehículo pasa a ser lo más
+   grande de la pantalla, y todo lo que lo rodea —precio, kilometraje,
+   ficha técnica— baja de peso para que no le compita. No cambia ni un dato:
+   es sólo tipografía, aire e interlineado, y va scopeado a `.ovl-ficha`
+   para no tocar el resto de los modales del sitio. */
+function estilosFicha(){
+  if(document.getElementById('estilosFicha')) return;
+  var s = document.createElement('style');
+  s.id = 'estilosFicha';
+  s.textContent =
+    /* más ancho: el aire necesita lugar donde existir */
+    '.ovl-ficha .mod{max-width:680px}' +
+    '.ovl-ficha .mod-h{padding:30px 34px 20px;' +
+      'border-bottom:1px solid rgba(226,232,240,.6)}' +
+    /* el nombre del auto es lo que domina la pantalla */
+    '.ovl-ficha .mod-h h3{font-size:clamp(1.45rem,3.6vw,1.95rem);font-weight:600;' +
+      'letter-spacing:-.8px;line-height:1.18;padding-right:16px}' +
+    '.ovl-ficha .mod-b{padding:26px 34px 30px}' +
+    '.ovl-ficha .mod-f{padding:20px 34px}' +
+    /* la foto respira y se ve de verdad */
+    '.ovl-ficha .ficha-fotos{display:flex;gap:12px;overflow-x:auto;' +
+      'margin:0 0 30px;padding-bottom:6px}' +
+    '.ovl-ficha .ficha-fotos img{height:232px;border-radius:12px;' +
+      'flex-shrink:0;object-fit:cover}' +
+    /* el precio es un dato, no un grito: no le gana al nombre */
+    '.ovl-ficha .ficha-precio{font-size:1.3rem;font-weight:600;' +
+      'letter-spacing:-.2px;color:var(--navy);margin-bottom:6px}' +
+    '.ovl-ficha .ficha-meta{margin-bottom:26px;letter-spacing:.2px}' +
+    '.ovl-ficha .ficha-desc{font-size:.9rem;line-height:1.85;' +
+      'margin-bottom:26px;color:#3A4757;white-space:pre-wrap}' +
+    /* la ficha técnica se lee, no se grita */
+    '.ovl-ficha .detail-row{padding:11px 0;font-size:.86rem}' +
+    '.ovl-ficha .detail-row span:first-child{font-weight:500}' +
+    '.ovl-ficha .detail-row span:last-child{font-weight:600;color:var(--ink)}' +
+    '@media(max-width:620px){' +
+      '.ovl-ficha .mod-h{padding:22px 20px 15px}' +
+      '.ovl-ficha .mod-b{padding:20px 20px 24px}' +
+      '.ovl-ficha .mod-f{padding:16px 20px}' +
+      '.ovl-ficha .ficha-fotos img{height:178px}}';
+  document.head.appendChild(s);
+}
+
 function dato(etiqueta, valor){
   if(valor === null || valor === undefined || valor === '' || valor === false) return '';
   return '<div class="detail-row"><span>'+etiqueta+'</span><span>'+esc(valor)+'</span></div>';
@@ -160,26 +204,24 @@ function dato(etiqueta, valor){
 window.verAuto = function(id){
   var v = A.autos.filter(function(x){ return x.id === id; })[0];
   if(!v) return;
+  estilosFicha();
   var t = titulo(v);
   var fotos = (A.fotos[v.id] || []).map(urlFoto).filter(Boolean);
 
   modal(esc(t) + (v.anio ? ' ' + v.anio : ''),
     (fotos.length
-      ? '<div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:16px;padding-bottom:4px">'+
+      ? '<div class="ficha-fotos">'+
         fotos.map(function(u){
-          return '<img src="'+esc(u)+'" alt="" style="height:170px;border-radius:10px;'+
-            'flex-shrink:0;object-fit:cover">';
+          return '<img src="'+esc(u)+'" alt="">';
         }).join('')+'</div>'
       : '')+
 
-    '<div style="font-size:1.7rem;font-weight:800;color:var(--navy);letter-spacing:-.5px;'+
-      'margin-bottom:4px">'+precio(v)+'</div>'+
-    '<div class="mini" style="margin-bottom:16px">'+
+    '<div class="ficha-precio">'+precio(v)+'</div>'+
+    '<div class="mini ficha-meta">'+
       (v.km ? num(v.km)+' km' : 'Kilometraje sin declarar')+
       (v.ubicacion ? ' · '+esc(v.ubicacion) : '')+'</div>'+
 
-    (v.descripcion ? '<div style="font-size:.88rem;line-height:1.65;margin-bottom:16px;'+
-      'white-space:pre-wrap">'+esc(v.descripcion)+'</div>' : '')+
+    (v.descripcion ? '<div class="ficha-desc">'+esc(v.descripcion)+'</div>' : '')+
 
     '<div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:4px 15px">'+
       dato('Moneda', v.moneda === 'ARS' ? 'Pesos argentinos' : '')+
@@ -221,6 +263,10 @@ window.verAuto = function(id){
     [{txt:'Cerrar', clase:'btn-o', fn:'cerrarModal()'},
      {txt:'Consultar este vehículo', clase:'',
       fn:'cerrarModal();consultarPorVehiculo('+v.id+',\''+esc(t).replace(/'/g,"\\'")+'\')'}]);
+
+
+  var capa = document.getElementById('modalOvl');
+  if(capa) capa.classList.add('ovl-ficha');
 };
 
 /* ═══════════════════════════════════════════════════════════════
