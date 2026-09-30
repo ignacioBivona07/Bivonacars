@@ -679,7 +679,7 @@ window.cerrarConReserva = function(id){
             esc(nombreDe(p))+'</option>'; }).join('')+'</select></div>'+
       selec('Forma de pago','cvPago',['Contado','Transferencia','Financiación','Permuta + efectivo','Mixto'],'Transferencia')+
     '</div>'+
-    '<div class="mini">Al confirmar se genera la comisión del 2% para el comisionista, arranca el trámite '+
+    '<div class="mini">Al confirmar se genera la comisión del comisionista, arranca el trámite '+
     'de transferencia y el vehículo queda marcado como vendido (no se borra: podés reimprimir el boleto cuando quieras).</div>',
     [{txt:'Cancelar',clase:'btn-o',fn:'cerrarModal()'},
      {txt:'Confirmar la venta',clase:'',fn:'confirmarVenta('+id+')'}]);
@@ -1070,9 +1070,10 @@ function vistaComisiones(){
     porPersona[c.usuario_id] = (porPersona[c.usuario_id]||0) + Number(c.monto_usd||0); });
 
   return '<div style="max-width:1020px">'+
-  '<div class="note w" style="margin-bottom:18px">Cada venta genera sola la comisión del 2% del comisionista. '+
-  'Se paga contra factura: por eso el sistema te pide el número de comprobante al marcarla pagada. '+
-  'Así queda respaldado el gasto para tu contabilidad.</div>'+
+  '<div class="note w" style="margin-bottom:18px">Cada venta genera sola la comisión del comisionista, '+
+  'en dinero. <b>Se paga contra factura y por transferencia</b>: sin esas dos cosas se cae la excepción '+
+  'del art. 23 de la LCT y el pago queda como indicio de relación de dependencia. El sistema te pide '+
+  'el número de factura al marcarla pagada, y no te deja seguir sin él.</div>'+
 
   '<div class="kpis" style="margin-bottom:18px">'+
     '<div class="kpi a"><div class="lb">Debés</div><div class="vl">'+usd(totalPend)+'</div>'+
@@ -1108,11 +1109,51 @@ function vistaComisiones(){
         pag.slice(0,30).map(function(c){
           var u = D.perfiles.filter(function(p){ return p.id === c.usuario_id; })[0];
           return '<tr><td>'+esc(u?nombreDe(u):'—')+'</td><td>'+usd(c.monto_usd)+'</td>'+
-            '<td>'+dia(c.fecha_pago)+'</td><td>'+esc(c.metodo||'—')+'</td>'+
-            '<td>'+esc(c.factura_nro||'—')+'</td></tr>';
+            '<td>'+dia(c.fecha_pago)+'</td>'+
+            '<td>'+(c.metodo && METODOS_BANCARIOS.indexOf(c.metodo) < 0
+              ? '<span class="pill p-amber" title="No es un pago por sistema bancario">'+esc(c.metodo)+'</span>'
+              : esc(c.metodo||'—'))+'</td>'+
+            '<td>'+(c.factura_nro
+              ? esc(c.factura_nro)
+              : '<span class="pill p-red" title="Pago sin factura de respaldo">sin factura</span>')+'</td></tr>';
         }).join('')+'</tbody></table></div>')
     : '')+
   '</div>';
+}
+
+/* ── Las tres condiciones del art. 23 LCT ───────────────────────────────
+   La Ley 27.802 de Modernización Laboral (6/3/2026) dejó una excepción
+   expresa a la presunción de contrato de trabajo para los servicios sin
+   dependencia en los que se emitan FACTURAS o el pago vaya por SISTEMAS
+   BANCARIOS. Las tres condiciones —inscripción vigente, factura por cada
+   comisión, y transferencia a una cuenta que no sea cuenta sueldo— son
+   baratas y son la diferencia entre entrar por la excepción o no. Ver
+   BIVONACARS-FORMALIZACION.md §7.
+
+   Lo que el sistema puede verificar solo, lo verifica y lo bloquea. Lo que
+   no puede —si un CBU es una cuenta sueldo no está en el número, es un
+   atributo de la cuenta— lo avisa en el momento del pago y lo deja a la
+   vista después, en vez de fingir un control que no existe. */
+
+var METODOS_BANCARIOS = ['Transferencia', 'Mercado Pago', 'Cheque'];
+
+function art23(u){
+  var cf  = u && u.condicion_fiscal;
+  var insc = !!(u && cf && cf !== 'No inscripto' && u.cuit);
+  return {
+    inscripto: insc,
+    condicion: cf || null,
+    verificado: !!(u && u.estado_verificacion === 'aprobado'),
+    constancia: !!(u && u.constancia_path),
+    cbu: (u && u.cbu) || null
+  };
+}
+
+function lineaCond(estado, texto){
+  var ic = estado === 'ok' ? '✓' : (estado === 'mal' ? '✕' : '!');
+  var col = estado === 'ok' ? 'var(--green)' : (estado === 'mal' ? 'var(--red)' : 'var(--amber)');
+  return '<div style="display:flex;gap:9px;align-items:flex-start;margin-top:7px;font-size:.83rem">'+
+    '<b style="color:'+col+';flex-shrink:0">'+ic+'</b><span>'+texto+'</span></div>';
 }
 
 window.pagarComision = function(id){
@@ -1120,11 +1161,34 @@ window.pagarComision = function(id){
   if(!c) return;
   var u = D.perfiles.filter(function(p){ return p.id === c.usuario_id; })[0];
 
+  var a = art23(u);
+
   modal('Registrar el pago de la comisión',
     '<div class="note g" style="margin-bottom:14px">A <b>'+esc(u?nombreDe(u):'—')+'</b>'+
     (u&&u.cbu?'<br>CBU: <span class="hash">'+esc(u.cbu)+'</span>':'')+
     (u&&u.alias_cbu?'<br>Alias: <span class="hash">'+esc(u.alias_cbu)+'</span>':'')+
+    (u&&u.banco?'<br>Banco: '+esc(u.banco):'')+
     '<br>Monto: <b>'+usd(c.monto_usd)+'</b></div>'+
+
+    /* Las tres condiciones, con el estado real de esta persona. */
+    '<div class="'+(a.inscripto && a.cbu ? 'note w' : 'note r')+'" style="margin-bottom:14px">'+
+      '<b>Las tres condiciones que sostienen que esto no es una relación de dependencia</b>'+
+      lineaCond(a.inscripto ? 'ok' : 'mal',
+        a.inscripto
+          ? 'Inscripción: '+esc(a.condicion)+', CUIT '+esc(u.cuit)+
+            (a.constancia ? '' : ' — <b>sin constancia cargada</b>')+
+            (a.verificado ? '' : ' — <b>sin verificar</b>')
+          : (a.condicion === 'No inscripto'
+              ? 'Declaró <b>no estar inscripto</b>: no puede facturarte, y sin factura este pago no entra por la excepción del art. 23.'
+              : 'Falta la condición fiscal o el CUIT en su perfil.'))+
+      lineaCond('aviso', 'Factura por esta comisión: cargá el número abajo. <b>Sin factura el sistema no guarda el pago.</b>')+
+      lineaCond(a.cbu ? 'aviso' : 'mal',
+        a.cbu
+          ? 'Pago por transferencia al CBU declarado. <b>Confirmá que no es una cuenta sueldo</b> — '+
+            'si lo es, se cae la excepción. El número de CBU no dice si la cuenta es de sueldo: hay que preguntárselo.'
+          : 'No declaró CBU: no hay forma de pagarle por transferencia.')+
+    '</div>'+
+
     '<div class="grid2">'+
       selec('Cómo se paga','pcMetodo',['Transferencia','Efectivo','Mercado Pago','Cheque','Otro'],'Transferencia')+
       campo('Fecha','pcFecha','date','value="'+hoy()+'"')+
@@ -1134,16 +1198,46 @@ window.pagarComision = function(id){
     '</div>'+
     '<div class="fld"><label>Notas</label><textarea id="pcNotas" rows="2"></textarea></div>'+
     '<div class="mini">Sin factura no deberías pagar: es el respaldo del gasto ante AFIP y '+
-    'lo que sostiene que la relación es entre independientes.</div>',
+    'lo que sostiene que la relación es entre independientes. En efectivo tampoco conviene: '+
+    'la excepción del art. 23 pide factura <b>o</b> pago bancario, y lo barato es tener las dos.</div>',
     [{txt:'Cancelar',clase:'btn-o',fn:'cerrarModal()'},
      {txt:'Confirmar pago',clase:'',fn:'guardarPagoComision('+id+')'}]);
 };
 
 window.guardarPagoComision = async function(id){
+  /* ── Control 1: sin factura no se paga ────────────────────────────────
+     Es el control más barato del sistema y el que más cubre: la factura es
+     a la vez el respaldo del gasto ante AFIP y la condición expresa de la
+     excepción del art. 23. Bloquea, no avisa. */
+  var nroFactura = (val('pcFactura') || '').trim();
+  if(!nroFactura)
+    return toast('Falta el <b>número de factura</b> del comisionista. Sin factura el pago no se '+
+      'registra: es el respaldo del gasto y la condición de la excepción del art. 23 de la LCT.','error');
+
+  /* ── Control 2: a quien no puede facturar, no se le paga acá ──────────
+     Si declaró no estar inscripto o le falta el CUIT, cualquier número que
+     se escriba arriba no es una factura. Mejor que el sistema se plante
+     ahora que quede un pago sin respaldo posible. */
+  var c0 = C.comisiones.filter(function(x){ return x.id === id; })[0];
+  var u0 = c0 ? D.perfiles.filter(function(p){ return p.id === c0.usuario_id; })[0] : null;
+  var a0 = art23(u0);
+  if(!a0.inscripto)
+    return toast('<b>'+esc(u0?nombreDe(u0):'El comisionista')+'</b> no tiene inscripción vigente '+
+      'cargada, así que no puede emitir la factura que respalda este pago. Completá su condición '+
+      'fiscal y su CUIT antes de pagarle.','error');
+
+  /* Control 3: el pago por fuera del banco no se bloquea —si pasó, pasó y
+     hay que poder registrarlo— pero queda avisado y queda a la vista en la
+     tabla de pagadas, que es lo que sirve si alguna vez hay que explicarlo. */
+  var metodo = val('pcMetodo');
+  if(METODOS_BANCARIOS.indexOf(metodo) < 0)
+    toast('Queda registrado como <b>'+esc(metodo)+'</b>: no es un pago por sistema bancario, '+
+      'y así no suma a la excepción del art. 23. Va marcado en la tabla de pagadas.','error');
+
   cargando(true,'Guardando…');
   var r = await sb.from('pagos_comision').update({
-    estado:'pagada', metodo: val('pcMetodo'), fecha_pago: val('pcFecha')||hoy(),
-    factura_nro: val('pcFactura')||null, comprobante: val('pcComprobante')||null,
+    estado:'pagada', metodo: metodo, fecha_pago: val('pcFecha')||hoy(),
+    factura_nro: nroFactura, comprobante: val('pcComprobante')||null,
     notas: val('pcNotas')||null, registrado_por: perfil.id
   }).eq('id', id);
   cargando(false);
