@@ -188,6 +188,18 @@ function estilosFicha(){
     '.ovl-ficha .detail-row{padding:11px 0;font-size:.86rem}' +
     '.ovl-ficha .detail-row span:first-child{font-weight:500}' +
     '.ovl-ficha .detail-row span:last-child{font-weight:600;color:var(--ink)}' +
+    /* ── Lo que sabemos de este auto (cambio 3) ─────────────────────
+       La mala noticia se marca en ámbar y la buena se deja neutra. Al
+       revés —premiar en verde lo que está bien— el bloque se leería
+       como una lista de argumentos de venta, que es justo lo que no es. */
+    '.ovl-ficha .ficha-saber{margin-top:26px;padding:20px 18px 6px;' +
+      'background:var(--bg);border:1px solid var(--line);border-radius:11px}' +
+    '.ovl-ficha .ficha-saber>b{display:block;font-size:.95rem;font-weight:600;' +
+      'color:var(--navy);letter-spacing:-.3px}' +
+    '.ovl-ficha .ficha-saber>p{margin:6px 0 14px;line-height:1.6}' +
+    '.ovl-ficha .ficha-saber .detail-row span:last-child{font-weight:600}' +
+    '.ovl-ficha .sab-mal{color:var(--amber)!important;font-weight:700!important}' +
+    '.ovl-ficha .sab-nd{color:var(--gray-l)!important;font-weight:500!important}' +
     '@media(max-width:620px){' +
       '.ovl-ficha .mod-h{padding:22px 20px 15px}' +
       '.ovl-ficha .mod-b{padding:20px 20px 24px}' +
@@ -199,6 +211,107 @@ function estilosFicha(){
 function dato(etiqueta, valor){
   if(valor === null || valor === undefined || valor === '' || valor === false) return '';
   return '<div class="detail-row"><span>'+etiqueta+'</span><span>'+esc(valor)+'</span></div>';
+}
+
+/* ── "Lo que sabemos de este auto" ──────────────────────────────────────
+   Cambio 3 de BIVONACARS-DISENO.md, y el de más valor de los seis. Estos
+   datos ya estaban en la base y en el formulario de publicación, y no se
+   mostraban en ningún lado: deuda de patentes, infracciones, prenda, VTV,
+   choques, dueños, service, llaves. Acá se muestran TODOS, incluidas las
+   respuestas malas, porque decir "tiene una deuda de patentes" vende más
+   que no decir nada — es el mismo hallazgo que el de las 25 fotos.
+
+   La redacción es deliberada. Los booleanos de la tabla son NOT NULL con
+   default `false`, así que un `false` significa "el que publicó no lo
+   tildó", no "el auto está verificado sin deuda". Por eso ninguna línea
+   afirma un hecho sobre el auto: todas dicen qué se DECLARA. "Sin deuda
+   declarada" es cierto siempre; "no tiene deuda" sería una garantía que
+   el dato no respalda, y una garantía falsa es peor que el silencio. */
+
+function fechaCorta(iso){
+  if(!iso) return '';
+  var p = String(iso).slice(0,10).split('-');
+  return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : String(iso);
+}
+function hoyISO(){
+  var d = new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+/* tono: '' neutro (dato sin carga), 'mal' (lo incómodo, en ámbar),
+   'nd' (no declarado, en gris: la ausencia también es información) */
+function filaSaber(etiqueta, texto, tono){
+  if(!texto) return '';
+  return '<div class="detail-row"><span>'+etiqueta+'</span><span'+
+    (tono ? ' class="sab-'+tono+'"' : '')+'>'+esc(texto)+'</span></div>';
+}
+
+function bloqueSaber(v){
+  var f = '';
+
+  /* Primero lo que el comprador teme: papeles y plata. */
+  f += filaSaber('Deuda de patentes',
+        v.deuda_patentes ? 'Tiene deuda declarada' : 'Sin deuda declarada',
+        v.deuda_patentes ? 'mal' : '');
+  f += filaSaber('Infracciones',
+        v.deuda_infracciones ? 'Tiene infracciones impagas' : 'Sin infracciones declaradas',
+        v.deuda_infracciones ? 'mal' : '');
+  f += filaSaber('Prenda',
+        v.prenda ? 'Tiene prenda declarada' : 'Sin prenda declarada',
+        v.prenda ? 'mal' : '');
+
+  /* VTV: si la fecha ya pasó, se dice que está vencida. */
+  if(v.vtv_vence){
+    var vencida = String(v.vtv_vence).slice(0,10) < hoyISO();
+    f += filaSaber('VTV',
+          (vencida ? 'Vencida el ' : 'Vigente hasta ')+fechaCorta(v.vtv_vence),
+          vencida ? 'mal' : '');
+  } else {
+    f += filaSaber('VTV', 'Sin declarar', 'nd');
+  }
+
+  /* Historial: el texto va tal como lo declaró quien publicó. */
+  f += v.historial_choques
+    ? filaSaber('Historial de choques', v.historial_choques, '')
+    : filaSaber('Historial de choques', 'Sin declarar', 'nd');
+
+  f += v.unico_dueno
+    ? filaSaber('Dueños', 'Único dueño', '')
+    : (v.duenos_anteriores !== null && v.duenos_anteriores !== undefined && v.duenos_anteriores !== ''
+        ? filaSaber('Dueños', num(v.duenos_anteriores)+' anteriores', '')
+        : filaSaber('Dueños', 'Sin declarar', 'nd'));
+
+  f += v.service_al_dia
+    ? filaSaber('Service', 'Al día'+(v.service_oficial ? ', en servicio oficial' : ''), '')
+    : filaSaber('Service', 'Sin declarar al día', 'nd');
+
+  var ult = [];
+  if(v.ultimo_service_km)    ult.push(num(v.ultimo_service_km)+' km');
+  if(v.ultimo_service_fecha) ult.push(fechaCorta(v.ultimo_service_fecha));
+  if(ult.length) f += filaSaber('Último service', ult.join(' · '), '');
+
+  if(v.uso_previo) f += filaSaber('Uso previo', v.uso_previo, '');
+  if(v.importado)  f += filaSaber('Origen', 'Importado', '');
+
+  f += (v.cantidad_llaves !== null && v.cantidad_llaves !== undefined && v.cantidad_llaves !== '')
+    ? filaSaber('Llaves', num(v.cantidad_llaves), '')
+    : filaSaber('Llaves', 'Sin declarar', 'nd');
+
+  var trae = [];
+  if(v.tiene_manual)  trae.push('manual');
+  if(v.tiene_auxilio) trae.push('auxilio');
+  if(v.tiene_criquet) trae.push('criquet');
+  f += trae.length
+    ? filaSaber('Entrega con', trae.join(' · '), '')
+    : filaSaber('Entrega con', 'Sin declarar', 'nd');
+
+  if(!f) return '';
+
+  return '<div class="ficha-saber">'+
+    '<b>Lo que sabemos de este auto</b>'+
+    '<p class="mini">Todo esto lo declara quien publica el vehículo. Lo que figura '+
+    'como sin declarar no está verificado: preguntáselo al comisionista antes de avanzar.</p>'+
+    f+'</div>';
 }
 
 window.verAuto = function(id){
@@ -235,10 +348,8 @@ window.verAuto = function(id){
       dato('Tracción', v.traccion)+
       dato('Puertas', v.puertas)+
       dato('Color', v.color)+
-      dato('Dueños anteriores', v.duenos_anteriores)+
       dato('Estado general', v.estado_general)+
       dato('GNC', v.tiene_gnc ? 'Sí' : '')+
-      dato('VTV vigente hasta', v.vtv_vence)+
       dato('Garantía de fábrica hasta', v.garantia_hasta)+
       dato('Transferencia a cargo de', v.transferencia_a_cargo)+
       dato('Se puede ver', v.disponible_para_ver)+
@@ -251,6 +362,8 @@ window.verAuto = function(id){
         v.equipamiento.map(function(e){ return '<span class="spec">'+esc(e)+'</span>'; }).join('')+
         '</div></div>'
       : '')+
+
+    bloqueSaber(v)+
 
     (v.detalles_esteticos || v.detalles_mecanicos
       ? '<div class="note w" style="margin-top:14px"><b>Detalles a tener en cuenta</b><br>'+
