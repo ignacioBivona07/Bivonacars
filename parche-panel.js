@@ -8,6 +8,11 @@ var BASE  = 'https://qymqfjtistprotddoqkz.supabase.co';
 var FOTOS = BASE + '/storage/v1/object/public/vehiculos/';
 
 var fotosElegidas = [];
+/* El techo de 25 ya existia; el piso no existia: se podia publicar un auto de
+   USD 13.000 con una sola foto y el sistema no decia una palabra. Ocho es el
+   numero por debajo del cual un aviso no compite (BIVONACARS-DISENO.md punto 4).
+   Es recomendacion, no bloqueo: tres fotos reales valen mas que tres de relleno. */
+var FOTOS_MAX = 25, FOTOS_RECOMENDADAS = 8;
 var config = {}, permisosDisponibles = [], campanas = [], gastos = [], recurrentes = [];
 var periodo = new Date().toISOString().slice(0,7);
 
@@ -59,13 +64,32 @@ window.elegirFotos = function(input){
     fotosElegidas.push(nuevos[i]);
   }
   input.value = '';
-  if(fotosElegidas.length > 25){ fotosElegidas = fotosElegidas.slice(0,25); toast('Máximo 25 fotos','error'); }
+  if(fotosElegidas.length > FOTOS_MAX){ fotosElegidas = fotosElegidas.slice(0,FOTOS_MAX); toast('Máximo '+FOTOS_MAX+' fotos','error'); }
   dibujarFotos();
 };
 window.quitarFoto   = function(i){ fotosElegidas.splice(i,1); dibujarFotos(); };
 window.haciaPortada = function(i){ fotosElegidas.unshift(fotosElegidas.splice(i,1)[0]); dibujarFotos(); };
 
+/* El contador no juzga el auto, cuenta fotos: dice cuantas hay, cuantas faltan
+   para el minimo recomendado y donde esta el techo. Es lo mas barato del cambio
+   y probablemente lo que mas mueve: el que ve un contador carga mas fotos. */
+function textoContadorFotos(){
+  var n = fotosElegidas.length, falta = FOTOS_RECOMENDADAS - n;
+  var cuenta = '<b>'+n+' de '+FOTOS_MAX+'</b>';
+  if(n === 0)          return cuenta + ' · se recomiendan al menos ' + FOTOS_RECOMENDADAS;
+  if(falta > 0)        return cuenta + ' · te falta'+(falta>1?'n':'')+' '+falta+' para el mínimo recomendado';
+  if(n >= FOTOS_MAX)   return cuenta + ' · llegaste al máximo';
+  return cuenta + ' · ya pasa el mínimo recomendado. Cuantas más, mejor.';
+}
+function dibujarContadorFotos(){
+  var e = document.getElementById('contadorFotos');
+  if(!e) return;
+  e.innerHTML = textoContadorFotos();
+  e.style.color = fotosElegidas.length < FOTOS_RECOMENDADAS ? 'var(--amber)' : 'var(--gray)';
+}
+
 function dibujarFotos(){
+  dibujarContadorFotos();
   var c = document.getElementById('galeriaAlta');
   if(!c) return;
   if(!fotosElegidas.length){
@@ -88,11 +112,21 @@ function vistaPublicar(){
   setTimeout(dibujarFotos, 30);
   return '<div style="max-width:980px">'+
 
-  tarjeta('📷 Fotos del vehículo','Obligatorio · la primera es la portada',
-    '<label class="drop" style="margin-bottom:12px"><div class="ic">📷</div>'+
-      '<b>Agregar fotos</b><small>JPG, PNG o WEBP · hasta 8 MB cada una · hasta 25 fotos</small>'+
+  tarjeta('📷 Fotos del vehículo','Obligatorio · mínimo recomendado '+FOTOS_RECOMENDADAS+' · máximo '+FOTOS_MAX,
+    '<label class="drop" style="margin-bottom:10px"><div class="ic">📷</div>'+
+      '<b>Agregar fotos</b><small>JPG, PNG o WEBP · hasta 8 MB cada una · hasta '+FOTOS_MAX+' fotos · la primera es la portada</small>'+
       '<input type="file" accept="image/*" multiple onchange="elegirFotos(this)"></label>'+
-    '<div id="galeriaAlta" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:9px"></div>')+
+    '<div id="contadorFotos" class="mini" style="margin-bottom:11px;font-size:.84rem;font-weight:600"></div>'+
+    '<div id="galeriaAlta" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:9px"></div>'+
+    '<div class="note" style="margin-top:13px">'+
+      '<b>Un aviso con pocas fotos pierde contra uno completo.</b> '+FOTOS_RECOMENDADAS+' es el piso para que el tuyo '+
+      'compita y '+FOTOS_MAX+' el techo. Si de este auto sólo tenés tres fotos, publicalo con tres: tres fotos reales '+
+      'valen más que tres de relleno.'+
+      '<div class="mini" style="margin-top:9px;line-height:1.75"><b>Qué conviene fotografiar:</b> frente 3/4 y trasera 3/4 · '+
+      'los dos laterales completos · interior desde las dos puertas · tablero con el kilometraje a la vista · motor · baúl · '+
+      'las cuatro llantas · <b>y lo que declarás como falla</b> (el choque reparado, la rayadura, el detalle mecánico): '+
+      'la foto de esa chapa convence más que cualquier texto, y es lo que el comprador vino a buscar.</div>'+
+    '</div>')+
 
   tarjeta('Identificación','',
     '<div class="grid3">'+
@@ -531,6 +565,17 @@ window.publicarVehiculo = async function(){
     return toast('Falta la cotización del dólar. Cargala en Configuración o escribila acá','error');
   if(!prop)   return toast('Completá el propietario','error');
   if(!fotosElegidas.length) return toast('Cargá al menos una foto del vehículo','error');
+
+  /* Aviso, no bloqueo. Bloquear por debajo del minimo empujaria a cargar fotos
+     de relleno, que es peor que tener pocas: si de ese auto hay tres fotos,
+     publicarlo con tres es mejor que no publicarlo. */
+  if(fotosElegidas.length < FOTOS_RECOMENDADAS){
+    var cuantas = fotosElegidas.length;
+    if(!confirm('Vas a publicar con '+cuantas+' foto'+(cuantas>1?'s':'')+'.\n\n'+
+      'Un aviso con menos de '+FOTOS_RECOMENDADAS+' fotos pierde contra uno completo: el que no ve el auto entero '+
+      'no escribe. Si podés sacar más, conviene hacerlo antes de publicar.\n\n'+
+      'Publicar igual con '+cuantas+'?')) { return; }
+  }
 
   var equipo = [];
   EQUIPAMIENTO.forEach(function(e,i){ if(chk('eq'+i)) equipo.push(e); });
