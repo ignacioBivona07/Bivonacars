@@ -128,7 +128,8 @@ function metadatosDe(d){
     localidad:d.localidad||'', domicilio:d.domicilio||'', cuit:d.cuit||'',
     condicion_fiscal:d.condicionFiscal||'', categoria_mono:d.categoriaMono||'',
     fecha_inscripcion:d.fechaInscripcion||'', cbu:d.cbu||'', alias_cbu:d.aliasCbu||'',
-    banco:d.banco||'', experiencia:d.experiencia||'', rubro:d.rubro||'',
+    banco:d.banco||'', cuenta_sueldo:d.cuentaSueldo||'',
+    experiencia:d.experiencia||'', rubro:d.rubro||'',
     concesionaria:d.concesionaria||'no' };
 }
 function modoCompletar(){ return !!(sesion && !perfil); }
@@ -157,7 +158,10 @@ window.finalizarRegistro = async function(){
       localidad:d.localidad||null, domicilio:d.domicilio||null, cuit:d.cuit||null,
       condicion_fiscal:d.condicionFiscal||null, categoria_mono:d.categoriaMono||null,
       fecha_inscripcion:d.fechaInscripcion||null, cbu:d.cbu||null,
-      alias_cbu:d.aliasCbu||null, banco:d.banco||null, experiencia:d.experiencia||null,
+      alias_cbu:d.aliasCbu||null, banco:d.banco||null,
+      cuenta_sueldo: d.cuentaSueldo ? d.cuentaSueldo === 'si' : null,
+      cuenta_sueldo_declarada_en: d.cuentaSueldo ? new Date().toISOString() : null,
+      experiencia:d.experiencia||null,
       rubro:d.rubro||null, concesionaria:d.concesionaria||'no' });
     if(ins.error){ cargando(false); return toast(mensajeError(ins.error),'error'); }
     await cargarSesion(); await cargarTodo();

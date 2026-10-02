@@ -153,6 +153,7 @@ let sesion=null,perfil=null,seccion="resumen",charts={},D={perfiles:[],vehiculos
     <h4 style="font-size:.88rem;font-weight:800;color:var(--navy);margin:18px 0 9px">Datos de cobro</h4>
     <div class="detail-row"><span>CBU / CVU</span><span style="font-family:Consolas,monospace;font-size:.78rem">${a.cbu||"—"}</span></div>
     <div class="detail-row"><span>Alias · Banco</span><span>${a.alias_cbu||"—"} · ${a.banco||"—"}</span></div>
+    <div class="detail-row"><span>¿Es cuenta sueldo?</span><span>${a.cuenta_sueldo===!0?'<b style="color:var(--red)">Sí, lo declaró</b>':a.cuenta_sueldo===!1?"No, lo declaró":"<b>No lo declaró</b> — preguntale"}</span></div>
     <h4 style="font-size:.88rem;font-weight:800;color:var(--navy);margin:18px 0 9px">Perfil</h4>
     <div class="detail-row"><span>Experiencia</span><span>${a.experiencia||"—"}</span></div>
     <div class="detail-row"><span>Rubro</span><span>${a.rubro||"—"}</span></div>

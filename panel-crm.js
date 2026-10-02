@@ -1145,8 +1145,20 @@ function art23(u){
     condicion: cf || null,
     verificado: !!(u && u.estado_verificacion === 'aprobado'),
     constancia: !!(u && u.constancia_path),
-    cbu: (u && u.cbu) || null
+    cbu: (u && u.cbu) || null,
+    /* La declaración del titular, que es el único que puede saberlo.
+       null = se dio de alta antes de que el formulario lo preguntara. */
+    cuentaSueldo: (u && typeof u.cuenta_sueldo === 'boolean') ? u.cuenta_sueldo : null,
+    declaradaEl: (u && u.cuenta_sueldo_declarada_en) || null
   };
+}
+
+/* La fecha de la declaración es la prueba de que se preguntó: se muestra siempre
+   que exista, porque sin fecha una declaración no prueba nada. */
+function fechaDecl(iso){
+  if(!iso) return 'su alta';
+  var d = new Date(iso);
+  return isNaN(d.getTime()) ? 'su alta' : 'el ' + d.toLocaleDateString('es-AR');
 }
 
 function lineaCond(estado, texto){
@@ -1171,7 +1183,7 @@ window.pagarComision = function(id){
     '<br>Monto: <b>'+usd(c.monto_usd)+'</b></div>'+
 
     /* Las tres condiciones, con el estado real de esta persona. */
-    '<div class="'+(a.inscripto && a.cbu ? 'note w' : 'note r')+'" style="margin-bottom:14px">'+
+    '<div class="'+(a.inscripto && a.cbu && a.cuentaSueldo !== true ? 'note w' : 'note r')+'" style="margin-bottom:14px">'+
       '<b>Las tres condiciones que sostienen que esto no es una relación de dependencia</b>'+
       lineaCond(a.inscripto ? 'ok' : 'mal',
         a.inscripto
@@ -1182,11 +1194,19 @@ window.pagarComision = function(id){
               ? 'Declaró <b>no estar inscripto</b>: no puede facturarte, y sin factura este pago no entra por la excepción del art. 23.'
               : 'Falta la condición fiscal o el CUIT en su perfil.'))+
       lineaCond('aviso', 'Factura por esta comisión: cargá el número abajo. <b>Sin factura el sistema no guarda el pago.</b>')+
-      lineaCond(a.cbu ? 'aviso' : 'mal',
-        a.cbu
-          ? 'Pago por transferencia al CBU declarado. <b>Confirmá que no es una cuenta sueldo</b> — '+
-            'si lo es, se cae la excepción. El número de CBU no dice si la cuenta es de sueldo: hay que preguntárselo.'
-          : 'No declaró CBU: no hay forma de pagarle por transferencia.')+
+      lineaCond(!a.cbu || a.cuentaSueldo === true ? 'mal'
+                : (a.cuentaSueldo === false ? 'ok' : 'aviso'),
+        !a.cbu
+          ? 'No declaró CBU: no hay forma de pagarle por transferencia.'
+          : (a.cuentaSueldo === true
+              ? 'El CBU declarado <b>es una cuenta sueldo</b>, según lo que él mismo declaró '+
+                fechaDecl(a.declaradaEl)+'. Transferir ahí hace caer la excepción: pedile otra cuenta antes de pagar.'
+              : (a.cuentaSueldo === false
+                  ? 'Declaró '+fechaDecl(a.declaradaEl)+' que el CBU <b>no es una cuenta sueldo</b>. '+
+                    'Queda la fecha de esa declaración, que es la prueba de que se preguntó.'
+                  : 'Se dio de alta <b>antes</b> de que el formulario preguntara por la cuenta sueldo, '+
+                    'así que no hay declaración suya. Preguntáselo antes de transferir — y si es cuenta '+
+                    'sueldo, pedile otro CBU.')))+
     '</div>'+
 
     '<div class="grid2">'+
