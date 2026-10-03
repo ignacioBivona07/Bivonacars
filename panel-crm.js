@@ -1149,7 +1149,12 @@ function art23(u){
     /* La declaración del titular, que es el único que puede saberlo.
        null = se dio de alta antes de que el formulario lo preguntara. */
     cuentaSueldo: (u && typeof u.cuenta_sueldo === 'boolean') ? u.cuenta_sueldo : null,
-    declaradaEl: (u && u.cuenta_sueldo_declarada_en) || null
+    declaradaEl: (u && u.cuenta_sueldo_declarada_en) || null,
+    /* 'titular' = la respondió él; 'gestion' = la anotó el administrador por lo
+       que le dijeron. No valen lo mismo como prueba y por eso no se muestran
+       igual: lo que se le reclamaría a BivonaCars es haber preguntado, y eso
+       sólo lo acredita una respuesta del titular. */
+    declaradaPor: (u && u.cuenta_sueldo_declarada_por) || null
   };
 }
 
@@ -1199,14 +1204,22 @@ window.pagarComision = function(id){
         !a.cbu
           ? 'No declaró CBU: no hay forma de pagarle por transferencia.'
           : (a.cuentaSueldo === true
-              ? 'El CBU declarado <b>es una cuenta sueldo</b>, según lo que él mismo declaró '+
+              ? 'El CBU declarado <b>es una cuenta sueldo</b>, según lo que '+
+                (a.declaradaPor === 'gestion' ? 'anotó gestión ' : 'él mismo declaró ')+
                 fechaDecl(a.declaradaEl)+'. Transferir ahí hace caer la excepción: pedile otra cuenta antes de pagar.'
               : (a.cuentaSueldo === false
-                  ? 'Declaró '+fechaDecl(a.declaradaEl)+' que el CBU <b>no es una cuenta sueldo</b>. '+
-                    'Queda la fecha de esa declaración, que es la prueba de que se preguntó.'
-                  : 'Se dio de alta <b>antes</b> de que el formulario preguntara por la cuenta sueldo, '+
-                    'así que no hay declaración suya. Preguntáselo antes de transferir — y si es cuenta '+
-                    'sueldo, pedile otro CBU.')))+
+                  ? (a.declaradaPor === 'gestion'
+                      ? 'Figura, anotado por gestión '+fechaDecl(a.declaradaEl)+', que el CBU '+
+                        '<b>no es una cuenta sueldo</b>. Es un apunte interno, no una '+
+                        'declaración suya: si alguna vez hay que probar que se preguntó, '+
+                        'esto vale menos que su respuesta. Conviene que lo conteste él desde su panel.'
+                      : 'Declaró él mismo '+fechaDecl(a.declaradaEl)+' que el CBU <b>no es una '+
+                        'cuenta sueldo</b>. Queda la fecha de esa declaración, que es la prueba '+
+                        'de que se preguntó.')
+                  : 'Se dio de alta <b>antes</b> de que el formulario preguntara por la cuenta sueldo. '+
+                    'Desde el 3 de octubre le aparece la pregunta en su propio panel la próxima vez que '+
+                    'entre, así que lo más probable es que se resuelva solo. Si tenés que pagarle antes, '+
+                    'preguntáselo — y si es cuenta sueldo, pedile otro CBU.')))+
     '</div>'+
 
     '<div class="grid2">'+

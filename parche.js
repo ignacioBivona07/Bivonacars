@@ -161,6 +161,8 @@ window.finalizarRegistro = async function(){
       alias_cbu:d.aliasCbu||null, banco:d.banco||null,
       cuenta_sueldo: d.cuentaSueldo ? d.cuentaSueldo === 'si' : null,
       cuenta_sueldo_declarada_en: d.cuentaSueldo ? new Date().toISOString() : null,
+      /* en el alta responde el titular, nadie más */
+      cuenta_sueldo_declarada_por: d.cuentaSueldo ? 'titular' : null,
       experiencia:d.experiencia||null,
       rubro:d.rubro||null, concesionaria:d.concesionaria||'no' });
     if(ins.error){ cargando(false); return toast(mensajeError(ins.error),'error'); }
@@ -481,6 +483,87 @@ window.verVehiculo = function(id){
           : [{txt:'Cerrar',clase:'btn-o',fn:'cerrarModal()'}]));
 };
 
+/* ── La declaración de cuenta sueldo de los que ya estaban (ítem 10d) ──
+   Desde el commit 97037aa se le pregunta a todo el que se da de alta si el
+   CBU que carga es una cuenta sueldo, y la respuesta queda con fecha. Los
+   perfiles anteriores a esa casilla no tienen declaración y no había ninguna
+   pantalla donde cargarla: el panel de gestión los marcaba en ámbar cada vez
+   que iba a pagarles y ahí terminaba todo.
+
+   Esto lo cierra por el lado que vale: se lo pregunta al titular, en su
+   propio panel, una sola vez. Una respuesta que anotó el administrador por
+   teléfono es un apunte interno; una que dio el comisionista es una
+   declaración suya, y es la única que sirve como prueba de que se preguntó
+   antes de pagar. Por eso la columna cuenta_sueldo_declarada_por guarda el
+   origen en vez de mezclar las dos.
+
+   Tres decisiones de forma, para que una sesión futura no las deshaga:
+
+   - Sólo aparece si YA hay un CBU cargado. La declaración es sobre ese CBU;
+     sin CBU no hay nada que declarar, y el panel de pago ya dice otra cosa
+     distinta para ese caso.
+   - No se puede cerrar ni postergar, pero no bloquea nada: el panel sigue
+     funcionando abajo. Es el mismo criterio del alta —avisar y no trabar—
+     porque el bloqueo que sirve está en el momento de pagar.
+   - Decir que SÍ no es un error ni esconde el cartel con una reprimenda:
+     queda registrado, se le explica por qué conviene otra cuenta, y gestión
+     lo ve en rojo cuando vaya a transferir. La respuesta incómoda tiene que
+     ser tan fácil de dar como la cómoda, o el dato deja de ser cierto. */
+
+function leFaltaDeclararCuentaSueldo(){
+  return !!(perfil && perfil.cbu &&
+            typeof perfil.cuenta_sueldo !== 'boolean');
+}
+
+function carteldeCuentaSueldo(){
+  return '<div class="wrap" style="padding-bottom:0">'+
+    '<div class="note w" id="avisoCuentaSueldo">'+
+      '<b>Una pregunta que falta en tu perfil</b><br>'+
+      'El CBU que tenés cargado (<span class="hash">'+esc(perfil.cbu)+'</span>), '+
+      '¿es la cuenta sueldo de un trabajo en relación de dependencia?<br>'+
+      '<span class="mini" style="display:block;margin:8px 0 10px">'+
+      'Te lo preguntamos porque cobrar tus comisiones en una cuenta sueldo puede hacer '+
+      'que la relación se interprete como un empleo, y eso no le conviene a ninguno de '+
+      'los dos. Si la respuesta es que sí, no pasa nada: te pedimos otro CBU y listo. '+
+      'A los que se dan de alta ahora se les pregunta en el formulario; vos entraste antes '+
+      'de que existiera.</span>'+
+      '<div style="display:flex;gap:9px;flex-wrap:wrap">'+
+        '<button class="btn btn-sm" onclick="declararCuentaSueldo(false)">No, no es cuenta sueldo</button>'+
+        '<button class="btn btn-o btn-sm" onclick="declararCuentaSueldo(true)">Sí, es mi cuenta sueldo</button>'+
+      '</div>'+
+    '</div></div>';
+}
+
+window.declararCuentaSueldo = async function(esCuentaSueldo){
+  if(!perfil) return;
+  cargando(true, 'Guardando tu respuesta…');
+  var r = await sb.from('perfiles').update({
+    cuenta_sueldo: esCuentaSueldo,
+    /* La fecha es lo que convierte la respuesta en prueba: sin ella no se
+       puede sostener que se preguntó ANTES de pagar. */
+    cuenta_sueldo_declarada_en: new Date().toISOString(),
+    cuenta_sueldo_declarada_por: 'titular'
+  }).eq('id', perfil.id);
+  if(r.error){ cargando(false); return toast(mensajeError(r.error), 'error'); }
+
+  perfil.cuenta_sueldo = esCuentaSueldo;
+  perfil.cuenta_sueldo_declarada_en = new Date().toISOString();
+  perfil.cuenta_sueldo_declarada_por = 'titular';
+  cargando(false);
+  render();
+
+  if(esCuentaSueldo){
+    modal('Gracias por avisar',
+      '<div class="note w">Te vamos a pedir <b>otro CBU</b> antes de pagarte la primera '+
+      'comisión: una cuenta a tu nombre que no sea la del sueldo. Cualquier caja de ahorro '+
+      'común sirve.<br><br>No perdés nada por haberlo dicho — al revés, lo decís ahora y no '+
+      'el día del pago.</div>',
+      [{txt:'Entendido', clase:'', fn:'cerrarModal()'}]);
+  } else {
+    toast('Anotado. Gracias.', 'ok');
+  }
+};
+
 /* ── Enganche ───────────────────────────────────────────────────────── */
 function ocultarPedidoDeArchivos(){
   if(document.getElementById('estiloSinArchivos')) return;
@@ -523,6 +606,13 @@ window.render = function(){
   }
   if(vista === 'registro') ocultarPedidoDeArchivos(); else mostrarPedidoDeArchivos();
   renderOriginal();
+  /* Va arriba de todo del panel, y sólo del panel: en el catálogo público o
+     en el registro no tiene nada que hacer. */
+  if(vista === 'panel' && leFaltaDeclararCuentaSueldo()){
+    var app = document.getElementById('app');
+    if(app && !document.getElementById('avisoCuentaSueldo'))
+      app.insertAdjacentHTML('afterbegin', carteldeCuentaSueldo());
+  }
 };
 
 var cargarTodoOriginal = window.cargarTodo;
