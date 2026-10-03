@@ -200,11 +200,27 @@ function estilosFicha(){
     '.ovl-ficha .ficha-saber .detail-row span:last-child{font-weight:600}' +
     '.ovl-ficha .sab-mal{color:var(--amber)!important;font-weight:700!important}' +
     '.ovl-ficha .sab-nd{color:var(--gray-l)!important;font-weight:500!important}' +
+    /* ── El escudo como cierre (cambio 5) ───────────────────────────
+       El sello va al pie, DESPUÉS de la parte incómoda, que es donde un
+       sello sirve: sellar lo que ya se leyó. Sobre el verde de la marca
+       y no sobre el blanco de la ficha, porque la identidad dice escudo
+       sobre negro o verde inglés. Plano, sin degradé ni sombra: la lista
+       de lo que no se hace empieza justo por ahí. */
+    '.ovl-ficha .ficha-sello{margin-top:26px;background:#1A2D21;' +
+      'border-radius:11px;padding:22px 24px;display:grid;' +
+      'grid-template-columns:86px minmax(0,1fr);gap:20px;align-items:center}' +
+    '.ovl-ficha .ficha-sello img{width:86px;height:auto;display:block}' +
+    '.ovl-ficha .ficha-sello b{display:block;font-size:.9rem;font-weight:600;' +
+      'color:#F0E4C8;letter-spacing:-.2px;margin-bottom:7px}' +
+    '.ovl-ficha .ficha-sello p{font-size:.84rem;line-height:1.7;' +
+      'color:#C3D6C8;margin:0}' +
     '@media(max-width:620px){' +
       '.ovl-ficha .mod-h{padding:22px 20px 15px}' +
       '.ovl-ficha .mod-b{padding:20px 20px 24px}' +
       '.ovl-ficha .mod-f{padding:16px 20px}' +
-      '.ovl-ficha .ficha-fotos img{height:178px}}';
+      '.ovl-ficha .ficha-fotos img{height:178px}' +
+      '.ovl-ficha .ficha-sello{grid-template-columns:1fr;gap:14px;text-align:center;justify-items:center}' +
+      '.ovl-ficha .ficha-sello img{width:68px}}';
   document.head.appendChild(s);
 }
 
@@ -314,6 +330,38 @@ function bloqueSaber(v){
     f+'</div>';
 }
 
+/* ── El escudo como cierre ──────────────────────────────────────────────
+   Cambio 5 de BIVONACARS-DISENO.md. El escudo no va de encabezado: va al
+   pie de la ficha, sobre el bloque de contacto, DESPUÉS del bloque de
+   transparencia. Un sello arriba promete; un sello abajo, al final de la
+   deuda de patentes y del choque declarado, confirma. Y la regla de la
+   identidad se cumple sola por donde cae: el precio quedó arriba, a varias
+   pantallas de scroll, así que el escudo nunca aparece al lado de un precio.
+
+   La línea dice CÓMO trabaja BivonaCars y nada más. No dice desde cuándo,
+   ni cuántos autos se vendieron, ni que la familia hace esto hace setenta
+   años: el "EST. 1954" lo dice el escudo como pieza gráfica —decisión de
+   identidad de Ignacio— y convertirlo en prosa sería afirmar un hecho que
+   este documento no puede respaldar. Es la misma regla que el cambio 6:
+   prueba social real o nada.
+
+   Y no lleva el lema escrito debajo: el escudo ya trae OMNIA POSSUNT
+   grabado en su cinta, asi que repetirlo en texto a diez pixeles de
+   distancia es dorado sobre dorado —lo primero de la lista de lo que no
+   se hace—. Se vio al mirar el bloque renderizado, no al escribirlo. */
+
+function bloqueSello(){
+  return '<div class="ficha-sello">'+
+    '<img src="marca-escudo.webp" width="641" height="641" loading="lazy" '+
+      'alt="Escudo de BivonaCars">'+
+    '<div>'+
+      '<b>Así trabaja BivonaCars</b>'+
+      '<p>Cada auto se publica con lo que el dueño declara, incluido lo que '+
+      'no le conviene. Lo que ves en esta ficha es todo lo que sabemos.</p>'+
+    '</div>'+
+  '</div>';
+}
+
 window.verAuto = function(id){
   var v = A.autos.filter(function(x){ return x.id === id; })[0];
   if(!v) return;
@@ -369,6 +417,8 @@ window.verAuto = function(id){
       ? '<div class="note w" style="margin-top:14px"><b>Detalles a tener en cuenta</b><br>'+
         esc([v.detalles_esteticos, v.detalles_mecanicos].filter(Boolean).join(' · '))+'</div>'
       : '')+
+
+    bloqueSello()+
 
     '<div class="note" style="margin-top:14px">Para ver el vehículo, coordinar una prueba o hacer '+
     'una oferta, hablás con un comisionista de la red. Él te acompaña hasta la transferencia.</div>',
