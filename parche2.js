@@ -350,6 +350,28 @@ window.vMisComisiones = function(){
 
 /* ═══════════ Legales ═══════════ */
 
+/* Huella del texto exacto que se aceptó.
+   La fecha y el número de versión solos no prueban QUÉ se aceptó: si el
+   cuerpo de un documento cambiara sin que nadie suba la versión, todas las
+   aceptaciones anteriores pasarían a decir, sin aviso, que se aceptó el
+   texto nuevo. Guardando la huella eso se puede comprobar: si el documento
+   que está hoy en la base no da la misma huella, no es el que se aceptó.
+   (Del lado de la base hay además un disparador que congela un documento
+   en cuanto alguien lo aceptó, así que la huella es el segundo control, no
+   el único.)
+   Si el navegador no tiene crypto.subtle devuelve null, y quien llama
+   guarda el cuerpo completo en su lugar: la columna hash_cuerpo y la
+   columna texto_aceptado no pueden ser las dos nulas. */
+async function huellaTexto(t){
+  try {
+    if(!(window.crypto && window.crypto.subtle)) return null;
+    var datos = new TextEncoder().encode(String(t));
+    var h = await window.crypto.subtle.digest('SHA-256', datos);
+    return Array.prototype.map.call(new Uint8Array(h), function(x){
+      return ('0' + x.toString(16)).slice(-2); }).join('');
+  } catch(e){ return null; }
+}
+
 window.verLegal = function(clave){
   var d = P.legales.filter(function(x){ return x.clave === clave; })[0];
   if(!d) return toast('No pude cargar el documento','error');
@@ -410,10 +432,15 @@ window.confirmarLegales = async function(){
       return toast('Falta aceptar: ' + pendientes[i].titulo, 'error');
 
   cargando(true,'Guardando…');
-  var filas = pendientes.map(function(d){
-    return { usuario_id: perfil.id, clave: d.clave, version: d.version,
-             navegador: String(navigator.userAgent).slice(0,180) };
-  });
+  var filas = [];
+  for(var j=0;j<pendientes.length;j++){
+    var d = pendientes[j];
+    var h = await huellaTexto(d.cuerpo);
+    filas.push({ usuario_id: perfil.id, clave: d.clave, version: d.version,
+                 navegador: String(navigator.userAgent).slice(0,180),
+                 hash_cuerpo: h,
+                 texto_aceptado: h ? null : d.cuerpo });
+  }
   var r = await sb.from('aceptaciones').insert(filas);
   cargando(false);
   if(r.error) return toast(mensajeError(r.error),'error');
