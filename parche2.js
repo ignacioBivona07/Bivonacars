@@ -10,6 +10,11 @@ var BASE  = 'https://qymqfjtistprotddoqkz.supabase.co';
 var FOTOS = BASE + '/storage/v1/object/public/vehiculos/';
 
 var P = { comisiones:[], avisos:[], mios:[], legales:[], aceptadas:[] };
+
+/* Se pone en true sólo cuando la lectura de `aceptaciones` salió bien.
+   Una lectura fallida no es lo mismo que "no aceptó nada": si se tratara
+   igual, el porton le volveria a pedir todo a alguien que ya aceptó. */
+var aceptadasCargadas = false;
 var favoritos = [];
 try { favoritos = JSON.parse(localStorage.getItem('bc_favoritos') || '[]'); } catch(e){ favoritos = []; }
 
@@ -373,7 +378,7 @@ async function huellaTexto(t){
 }
 
 window.verLegal = function(clave){
-  var d = P.legales.filter(function(x){ return x.clave === clave; })[0];
+  var d = docsAceptables().filter(function(x){ return x.clave === clave; })[0];
   if(!d) return toast('No pude cargar el documento','error');
   modal(esc(d.titulo),
     '<div style="font-size:.87rem;line-height:1.65;max-height:60vh;overflow-y:auto;padding-right:6px">'+
@@ -381,37 +386,104 @@ window.verLegal = function(clave){
     [{txt:'Cerrar',clase:'',fn:'cerrarModal()'}]);
 };
 
-function faltaAceptar(){
-  if(!perfil || perfil.rol === 'admin') return null;
-  for(var i=0;i<P.legales.length;i++){
-    var d = P.legales[i];
-    var ya = P.aceptadas.filter(function(a){
-      return a.clave === d.clave && a.version === d.version; }).length;
-    if(!ya) return d;
-  }
-  return null;
+/* Las condiciones del alta son el cuarto documento del porton, y no viven en
+   documentos_legales: viven en el codigo (condicionesAlta(), publica.js),
+   porque sus numeros --el cupo, los dias de penalizacion-- se resuelven al
+   mostrarse. Se las envuelve con la misma forma que un documento legal para
+   que el porton las trate igual, en vez de tener dos caminos que con el
+   tiempo se desincronizan.
+
+   Por que hace falta: el alta escribe la fila de aceptacion, pero si esa
+   escritura falla el usuario ve el aviso y NADIE se lo vuelve a pedir, porque
+   el porton solo recorria documentos_legales. Y los perfiles anteriores a
+   octubre de 2026 tildaron las cuatro condiciones sin que se guardara nada.
+   En los dos casos lo que falta es la prueba, no la voluntad, y la forma de
+   recuperarla es volver a preguntar --no rellenarla por ellos, que seria
+   fabricarla. */
+function docCondicionesAlta(){
+  if(typeof condicionesAlta !== 'function') return null;
+  if(typeof textoCondicionesAlta !== 'function') return null;
+  if(typeof CONDICIONES_ALTA_VERSION === 'undefined') return null;
+  var items;
+  try { items = condicionesAlta(); } catch(e){ return null; }
+  if(!items || !items.length) return null;
+  return { clave:'condiciones_alta', version:CONDICIONES_ALTA_VERSION,
+           titulo:'Condiciones del acuerdo',
+           cuerpo:'<ol style="padding-left:20px;display:grid;gap:10px;margin:0">'+
+             items.map(function(c){ return '<li>'+c[2]+'</li>'; }).join('')+'</ol>',
+           items:items, enCodigo:true };
 }
 
-function vAceptarLegales(){
-  var pendientes = P.legales.filter(function(d){
+/* Todo lo que hay que aceptar: los documentos vigentes de la base, mas las
+   condiciones del alta. */
+function docsAceptables(){
+  var lista = P.legales.slice();
+  var alta = docCondicionesAlta();
+  if(alta) lista.push(alta);
+  return lista;
+}
+
+function pendientesDeAceptar(){
+  return docsAceptables().filter(function(d){
     return !P.aceptadas.filter(function(a){
       return a.clave === d.clave && a.version === d.version; }).length;
   });
+}
+
+function faltaAceptar(){
+  if(!perfil || perfil.rol === 'admin') return null;
+  if(!aceptadasCargadas) return null;
+  return pendientesDeAceptar()[0] || null;
+}
+
+/* El estilo de la tilde se escribe acá y no en una clase: `.chk` nunca tuvo
+   regla de CSS en ningún archivo, así que las tildes de esta pantalla venían
+   saliendo sin formato. Es el mismo estilo que usa el paso 4 del registro,
+   a propósito: lo que se vuelve a pedir tiene que verse como lo que se
+   pidió la primera vez. */
+var ESTILO_TILDE = 'display:flex;gap:10px;align-items:flex-start;padding:12px;'+
+  'background:var(--bg);border:1px solid var(--line);border-radius:9px;'+
+  'cursor:pointer;font-size:.83rem;line-height:1.55';
+
+/* Las condiciones del alta se muestran enteras y con una tilde cada una,
+   igual que en el registro. Una sola tilde para las cuatro sería una prueba
+   más débil que la que pide el alta, y el porton existe justamente para que
+   no haya dos niveles de prueba para lo mismo. */
+function bloqueCondicionesAlta(d){
+  return '<div class="card"><div class="card-b" style="padding:16px 18px">'+
+    '<b style="color:var(--navy)">'+esc(d.titulo)+'</b>'+
+    '<div class="mini">versión '+esc(d.version)+'</div>'+
+    '<div style="display:grid;gap:8px;margin-top:13px">'+
+    d.items.map(function(c,n){
+      return '<label style="'+ESTILO_TILDE+'">'+
+        '<input type="checkbox" id="ac_condiciones_alta_'+(n+1)+'" '+
+          'style="width:17px;height:17px;accent-color:var(--blue);flex-shrink:0;margin-top:1px">'+
+        '<span>'+c[2]+'</span></label>';
+    }).join('')+'</div>'+
+  '</div></div>';
+}
+
+function vAceptarLegales(){
+  var pendientes = pendientesDeAceptar();
 
   return '<div class="wrap" style="max-width:760px">'+
     '<h2 class="sec">Antes de empezar</h2>'+
-    '<p class="sub">Necesitamos que leas y aceptes estos documentos. Es lo que deja claro cómo trabajamos, '+
-    'cuánto cobrás y qué hacemos con tus datos. Se guarda la fecha de tu aceptación.</p>'+
+    '<p class="sub">Necesitamos que leas y aceptes esto. Es lo que deja claro cómo trabajamos, '+
+    'cuánto cobrás y qué hacemos con tus datos. Queda guardado con la fecha '+
+    '<b>y el texto exacto</b> que estás aceptando, así siempre se puede saber qué decía.</p>'+
 
     '<div style="display:grid;gap:11px;margin:20px 0">'+
     pendientes.map(function(d){
+      if(d.enCodigo) return bloqueCondicionesAlta(d);
       return '<div class="card"><div class="card-b" style="padding:16px 18px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">'+
           '<div><b style="color:var(--navy)">'+esc(d.titulo)+'</b>'+
           '<div class="mini">versión '+esc(d.version)+'</div></div>'+
           '<button class="btn btn-o btn-sm" onclick="verLegal(\''+esc(d.clave)+'\')">Leer</button>'+
         '</div>'+
-        '<label class="chk" style="margin-top:12px"><input type="checkbox" id="ac_'+esc(d.clave)+'">'+
+        '<label style="'+ESTILO_TILDE+';margin-top:12px">'+
+          '<input type="checkbox" id="ac_'+esc(d.clave)+'" '+
+            'style="width:17px;height:17px;accent-color:var(--blue);flex-shrink:0;margin-top:1px">'+
         '<span>Leí y acepto '+esc(d.titulo.toLowerCase())+'</span></label>'+
       '</div></div>';
     }).join('')+'</div>'+
@@ -423,18 +495,36 @@ function vAceptarLegales(){
 }
 
 window.confirmarLegales = async function(){
-  var pendientes = P.legales.filter(function(d){
-    return !P.aceptadas.filter(function(a){
-      return a.clave === d.clave && a.version === d.version; }).length;
-  });
-  for(var i=0;i<pendientes.length;i++)
-    if(!chk('ac_' + pendientes[i].clave))
-      return toast('Falta aceptar: ' + pendientes[i].titulo, 'error');
+  var pendientes = pendientesDeAceptar();
+  for(var i=0;i<pendientes.length;i++){
+    var p = pendientes[i];
+    if(p.enCodigo){
+      for(var k=0;k<p.items.length;k++)
+        if(!chk('ac_condiciones_alta_' + (k+1)))
+          return toast('Tenés que aceptar las cuatro condiciones del acuerdo','error');
+    } else if(!chk('ac_' + p.clave)){
+      return toast('Falta aceptar: ' + p.titulo, 'error');
+    }
+  }
 
   cargando(true,'Guardando…');
   var filas = [];
   for(var j=0;j<pendientes.length;j++){
     var d = pendientes[j];
+    if(d.enCodigo){
+      /* Acá se archiva el TEXTO y no la huella, y es a propósito: el cuerpo de
+         un documento legal está en la base, así que una huella se puede
+         comprobar contra él; las condiciones del alta viven en el código y se
+         reemplazan en cada despliegue, así que una huella sola no tendría
+         contra qué compararse. Se guarda el texto ya resuelto --con el cupo y
+         los días que leyó-- y con la misma forma que escribe el alta, para que
+         las dos filas sean indistinguibles. */
+      filas.push({ usuario_id: perfil.id, clave: d.clave, version: d.version,
+                   navegador: String(navigator.userAgent).slice(0,180),
+                   hash_cuerpo: null,
+                   texto_aceptado: textoCondicionesAlta() });
+      continue;
+    }
     var h = await huellaTexto(d.cuerpo);
     filas.push({ usuario_id: perfil.id, clave: d.clave, version: d.version,
                  navegador: String(navigator.userAgent).slice(0,180),
@@ -497,6 +587,7 @@ async function cargarLegales(){
   if(perfil){
     var b = await sb.from('aceptaciones').select('*').eq('usuario_id', perfil.id);
     P.aceptadas = b.data || [];
+    aceptadasCargadas = !b.error;
   }
 }
 
@@ -581,8 +672,13 @@ function pintarAccesos(){
 
 var renderPrevio2 = window.render;
 window.render = function(){
-  /* Antes de nada: si falta aceptar los legales, no se avanza */
-  if(perfil && perfil.rol !== 'admin' && P.legales.length && faltaAceptar()){
+  /* Antes de nada: si falta aceptar algo, no se avanza.
+     Ya no se pide `P.legales.length`: esa guarda estaba para no encerrar a
+     nadie si fallaba la lectura de documentos_legales, pero también hacía
+     que las condiciones del alta --que viven en el código y siempre están--
+     no se pidieran nunca. El resguardo real es `aceptadasCargadas`, que
+     distingue "no aceptó" de "no se pudo leer qué aceptó". */
+  if(perfil && perfil.rol !== 'admin' && faltaAceptar()){
     if(typeof renderNav === 'function') renderNav();
     document.getElementById('app').innerHTML = vAceptarLegales();
     return;
