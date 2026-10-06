@@ -123,7 +123,96 @@ async function guardarCondicionesAlta(uid){try{const{error:x}=await sb.from("ace
         ${wizPaso<4?"Continuar →":"✓ Crear mi cuenta"}</button>
     </div>
     <div class="auth-alt">¿Ya tenés cuenta? <a onclick="ir('login')">Ingresá acá</a></div>
-  </div></div>`}function pasoDatos(){const a=regData;return`
+  </div></div>`}/* ── Aviso del art. 6 de la ley 25.326 ─────────────────────────────────
+   Va en el PASO 1 y arriba de los campos, no en el paso 4 junto a las
+   tildes del acuerdo. El dato más sensible de todo el formulario --las
+   fotos del DNI-- se pide acá, y un aviso en el paso 4 llegaría DESPUÉS
+   de haberlo recolectado. El art. 6 no pide que la información exista en
+   alguna parte del sitio: pide darla AL RECOLECTAR.
+
+   Los incisos a (finalidad), c (carácter obligatorio) y d (consecuencias)
+   no necesitan ningún dato del responsable y se muestran siempre. Los
+   incisos b (identidad y domicilio del responsable) y e (dirección donde
+   ejercer acceso, rectificación y supresión) sí lo necesitan: viven en
+   RESPONSABLE_DATOS y, mientras esté vacío, NO se muestran.
+
+   Es a propósito. Un inciso b con un marcador de posición sería peor que
+   no tenerlo: le diría al titular que hay un responsable identificado
+   justo donde el texto no identifica a nadie. Y el aviso se MUESTRA, no
+   se acepta, así que no archiva ninguna prueba -- completar las cuatro
+   constantes de abajo alcanza para que el aviso quede entero, sin tocar
+   ninguna otra línea.
+
+   Ojo con una cosa al completarlo: el borrador de BIVONACARS-FORMALIZACION
+   (punto 8.5) dice "inscripta en el Registro Nacional de Bases de Datos
+   Personales de la AAIP". Esa frase NO está acá y no hay que agregarla
+   hasta que la inscripción exista de verdad: hoy está pendiente, y un
+   aviso de datos personales que declara una inscripción que no se hizo es
+   justamente la clase de inexactitud que el art. 6 castiga. */
+const RESPONSABLE_DATOS = { nombre:"", cuit:"", domicilio:"", correo:"" };
+
+function avisoResponsableListo(){
+  const r = RESPONSABLE_DATOS;
+  return !!(r.nombre && r.domicilio && r.correo);
+}
+
+/* El inciso c dice la verdad campo por campo, y por eso enumera en vez de
+   decir "todos los datos son obligatorios", que es lo que decía el
+   borrador y es falso: el formulario deja seguir sin domicilio, sin alias
+   de CBU, sin banco, sin experiencia, sin rubro y sin concesionaria.
+   Declarar obligatorio un campo que el validador no exige es exactamente
+   la inexactitud que el inciso c busca evitar. Si alguna vez el domicilio
+   pasa a ser obligatorio en validarPaso(), hay que moverlo de la segunda
+   lista a la primera -- las dos listas de acá son la única fuente de esa
+   afirmación en todo el sitio. */
+function avisoDatosPersonales(){
+  const r = RESPONSABLE_DATOS;
+  const linea = 'margin-top:9px';
+  let h = '<div class="note" style="margin-bottom:18px">'+
+    '<b>Qué hacemos con tus datos</b>'+
+    '<div style="'+linea+'">Los datos que te pedimos en este formulario '+
+      '—nombre, DNI y sus fotos, fecha de nacimiento, CUIT, domicilio, '+
+      'contacto y CBU— los usamos para <b>habilitarte a operar como '+
+      'comisionista independiente, verificar tu identidad y tu inscripción '+
+      'fiscal, y pagarte tus comisiones</b>. No los usamos para otra cosa y '+
+      'no los vendemos ni los cedemos a terceros con fines comerciales.</div>';
+
+  if(avisoResponsableListo()){
+    h += '<div style="'+linea+'">Quedan guardados en una base de datos '+
+      'personales cuyo responsable es <b>'+r.nombre+
+      (r.cuit ? ', CUIT '+r.cuit : '')+
+      ', con domicilio en '+r.domicilio+'</b>.</div>';
+  }
+
+  h += '<div style="'+linea+'"><b>Son obligatorios</b> nombre, apellido, DNI, '+
+      'fecha de nacimiento y las dos fotos del DNI; correo, teléfono, '+
+      'provincia y localidad; condición fiscal —y si estás inscripto, '+
+      'también CUIT, fecha de inscripción, categoría de monotributo y la '+
+      'constancia de AFIP—; CBU y la respuesta sobre si esa cuenta es tu '+
+      'cuenta sueldo. Sin ellos no se puede verificar con quién estamos '+
+      'trabajando ni emitir los pagos.</div>'+
+    '<div style="'+linea+'"><b>Son opcionales</b> el domicilio, el alias del '+
+      'CBU, el banco, la experiencia, el rubro y si trabajás en una '+
+      'concesionaria.</div>'+
+    '<div style="'+linea+'">Si no das los obligatorios, <b>no podemos '+
+      'habilitarte la cuenta</b>. Si los das inexactos o desactualizados, la '+
+      'cuenta puede quedar suspendida y los pagos demorados o rechazados por '+
+      'el banco.</div>';
+
+  if(avisoResponsableListo()){
+    h += '<div style="'+linea+'">En cualquier momento podés <b>pedir acceso a '+
+      'tus datos, corregirlos o pedir que se supriman</b>, escribiendo a '+
+      '<b>'+r.correo+'</b>. El acceso es gratuito y se puede ejercer a '+
+      'intervalos de no menos de seis meses, salvo que acredites un interés '+
+      'legítimo. La supresión no alcanza a los datos que tengamos que '+
+      'conservar por una obligación legal, por ejemplo los respaldos '+
+      'fiscales de las facturas y pagos.</div>';
+  }
+
+  return h + '</div>';
+}
+
+function pasoDatos(){const a=regData;return`${avisoDatosPersonales()}
   <div class="row2">
     <div class="fld"><label>Nombre <span class="req">*</span></label><input id="rNombre" value="${a.nombre||""}" placeholder="Juan"></div>
     <div class="fld"><label>Apellido <span class="req">*</span></label><input id="rApellido" value="${a.apellido||""}" placeholder="Pérez"></div>
