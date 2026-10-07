@@ -104,8 +104,56 @@ let sesion=null,perfil=null,penas=[],asigs=[],vehiculos=[],visitas=[],operacione
    Los números (cupo, días) se resuelven al mostrarse, y por eso lo que se
    guarda es el texto YA RESUELTO: el cupo que aceptó es el que leyó, no el
    que esté vigente el día que alguien revise la fila. */
-const CONDICIONES_ALTA_VERSION="2026-10";
-function condicionesAlta(){return[["rAcepta1","acepta1","Declaro que actúo como <b>trabajador independiente</b>, bajo mi propio riesgo, sin relación de dependencia con BivonaCars, y que puedo prestar servicios a terceros."],["rAcepta2","acepta2","Me comprometo a <b>emitir factura</b> por mis honorarios como condición para el cobro de cada comisión."],["rAcepta3","acepta3",`Acepto las reglas de <b>cupos y penalizaciones</b>: hasta ${CUPO_BASE} vehículos simultáneos, y ${DIAS_PENALIZACION} días de cupo reducido si libero un vehículo tomado.`],["rAcepta4","acepta4","Me comprometo a mantener la <b>confidencialidad</b> de los datos de propietarios y vehículos del catálogo."]]}
+/* RESPONSABLE_DATOS se declara ACÁ ARRIBA, y no junto al aviso del art. 6
+   donde está su comentario largo, porque ahora hay DOS cosas que dependen
+   de él y una se evalúa al cargar el archivo: el aviso del art. 6 (más
+   abajo, se MUESTRA) y la quinta condición del alta --el consentimiento de
+   la transferencia internacional del art. 12-- que se OFRECE sólo si hay
+   correo. Bajar esta línea rompe la versión de las condiciones por zona
+   muerta del const. */
+const RESPONSABLE_DATOS = { nombre:"", cuit:"", domicilio:"", correo:"" };
+
+/* La quinta condición: el consentimiento del art. 12 de la ley 25.326 para
+   la transferencia internacional de datos. Se ofrece SÓLO si hay un correo
+   donde revocarlo. Dos razones, y la segunda es la que manda:
+
+   1. Un consentimiento que dice que se puede revocar y no dice dónde no es
+      un consentimiento informado.
+   2. Éste SÍ SE ARCHIVA --al contrario del aviso del art. 6, que sólo se
+      muestra--, así que un marcador de posición acá no sería un texto
+      incompleto en pantalla: sería una fila guardada que PRUEBA que se
+      mostró un texto incompleto. Mientras el correo esté vacío, la quinta
+      condición no existe para nadie y nada cambia.
+
+   El dato de los países no es decorativo y está verificado contra la API de
+   Supabase (7/10/2026): el proyecto autonet corre en la región sa-east-1,
+   que es San Pablo, Brasil; la empresa que la administra es de Estados
+   Unidos. Ninguno de los dos integra la lista de protección adecuada de la
+   AAIP.
+
+   Y la jerarquía legal, que está en el punto 8.6 de formalización y conviene
+   no perder de vista al leer esto: el art. 12.1 PROHÍBE la transferencia a
+   países sin protección adecuada, y el art. 12.2 trae una lista cerrada de
+   excepciones en la que el consentimiento del titular NO figura. El
+   consentimiento como figura habilitante sale de la AAIP, no del texto de la
+   ley. Las cláusulas modelo (Res. 198/2023) son el camino firme y esto es el
+   refuerzo -- no al revés. */
+function condicionTransferencia(){if(!RESPONSABLE_DATOS.correo)return null;return["rAcepta5","acepta5","Acepto que mis datos —incluidas las fotos de mi DNI— se guarden en <b>servidores fuera de la Argentina</b>: la plataforma <b>Supabase</b>, en servidores ubicados en <b>Brasil</b>, administrados por una empresa de <b>Estados Unidos</b>. Ninguno de los dos países integra la lista de países con protección adecuada de la AAIP, así que esta transferencia necesita mi consentimiento expreso. Sé que <b>puedo revocarlo en cualquier momento</b> escribiendo a "+RESPONSABLE_DATOS.correo+", y que revocarlo implica que la cuenta no pueda seguir operando, porque el sistema funciona sobre esa plataforma."]}
+
+/* La versión se mueve SOLA cuando aparece la quinta condición, y eso evita el
+   peor error posible de este mecanismo: que dos personas tengan archivada la
+   clave condiciones_alta en la MISMA versión habiendo aceptado textos
+   distintos --cuatro condiciones una, cinco la otra--, con lo cual la fila
+   dejaría de ser prueba de nada. Al completar el correo de RESPONSABLE_DATOS
+   la versión pasa a "2026-10-t" y el portón de parche2.js le vuelve a pedir
+   las condiciones a todos, que es exactamente lo que corresponde cuando el
+   texto cambió. Con el correo vacío la versión es la de siempre. */
+const CONDICIONES_ALTA_VERSION="2026-10"+(RESPONSABLE_DATOS.correo?"-t":"");
+
+/* Para que el mensaje del validador diga "las cinco" y no "las 5" cuando la
+   quinta condición esté activa. */
+const CANT_PALABRA={3:"tres",4:"cuatro",5:"cinco",6:"seis"};
+function condicionesAlta(){const t=condicionTransferencia();return[["rAcepta1","acepta1","Declaro que actúo como <b>trabajador independiente</b>, bajo mi propio riesgo, sin relación de dependencia con BivonaCars, y que puedo prestar servicios a terceros."],["rAcepta2","acepta2","Me comprometo a <b>emitir factura</b> por mis honorarios como condición para el cobro de cada comisión."],["rAcepta3","acepta3",`Acepto las reglas de <b>cupos y penalizaciones</b>: hasta ${CUPO_BASE} vehículos simultáneos, y ${DIAS_PENALIZACION} días de cupo reducido si libero un vehículo tomado.`],["rAcepta4","acepta4","Me comprometo a mantener la <b>confidencialidad</b> de los datos de propietarios y vehículos del catálogo."]].concat(t?[t]:[])}
 /* El texto literal que se le mostró, numerado y sin las marcas de negrita.
    Es lo que se archiva como prueba, así que se arma del mismo lugar que el
    render y no de una copia escrita a mano. */
@@ -149,7 +197,11 @@ async function guardarCondicionesAlta(uid){try{const{error:x}=await sb.from("ace
    hasta que la inscripción exista de verdad: hoy está pendiente, y un
    aviso de datos personales que declara una inscripción que no se hizo es
    justamente la clase de inexactitud que el art. 6 castiga. */
-const RESPONSABLE_DATOS = { nombre:"", cuit:"", domicilio:"", correo:"" };
+/* RESPONSABLE_DATOS ya no se declara acá: subió arriba de
+   CONDICIONES_ALTA_VERSION, porque la quinta condición del alta también
+   depende de él y la versión se evalúa al cargar el archivo. Completar las
+   cuatro constantes allá arriba deja entero el aviso de abajo Y habilita el
+   consentimiento del art. 12. */
 
 function avisoResponsableListo(){
   const r = RESPONSABLE_DATOS;
@@ -311,7 +363,14 @@ function pasoDatos(){const a=regData;return`${avisoDatosPersonales()}
     <b>${s?s.name:i}</b>
     <small>${s?"Archivo cargado — clic para reemplazar":"PDF, JPG o PNG · hasta 5 MB"}</small>
     <input type="file" accept=".pdf,.jpg,.jpeg,.png" onchange="tomarArchivo('${a}', this)">
-  </label>`}function tomarArchivo(a,e){const i=e.files[0];if(!i)return;if(i.size>5*1024*1024)return toast("El archivo supera los 5 MB","error");archivos[a]=i;const s=$("dz_"+a);s.classList.add("has"),s.querySelector(".ic").textContent="✓",s.querySelector("b").textContent=i.name,s.querySelector("small").textContent="Archivo cargado — clic para reemplazar"}function leerPaso(){const a=e=>$(e)?$(e).value.trim():"";wizPaso===1&&Object.assign(regData,{nombre:a("rNombre"),apellido:a("rApellido"),dni:a("rDni"),nacimiento:a("rNacimiento")}),wizPaso===2&&Object.assign(regData,{email:a("rEmail"),tel:a("rTel"),provincia:a("rProvincia"),localidad:a("rLocalidad"),domicilio:a("rDomicilio"),experiencia:a("rExperiencia"),rubro:a("rRubro"),concesionaria:a("rConcesionaria")}),wizPaso===3&&Object.assign(regData,{condicionFiscal:a("rCondicion"),cuit:a("rCuit"),fechaInscripcion:a("rFechaInsc"),categoriaMono:a("rCategoria")}),wizPaso===4&&Object.assign(regData,{cbu:a("rCbu"),aliasCbu:a("rAlias"),banco:a("rBanco"),cuentaSueldo:a("rCuentaSueldo"),pass:a("rPass"),pass2:a("rPass2"),acepta1:$("rAcepta1")&&$("rAcepta1").checked,acepta2:$("rAcepta2")&&$("rAcepta2").checked,acepta3:$("rAcepta3")&&$("rAcepta3").checked,acepta4:$("rAcepta4")&&$("rAcepta4").checked})}function validarPaso(){const a=regData;if(wizPaso===1){if(!a.nombre||!a.apellido||!a.dni||!a.nacimiento)return"Completá nombre, apellido, DNI y fecha de nacimiento";if(!/^\d{7,8}$/.test(a.dni))return"El DNI debe tener 7 u 8 dígitos, sin puntos";if((Date.now()-new Date(a.nacimiento))/315576e5<18)return"Tenés que ser mayor de 18 años para operar";if(!archivos.dniFrente||!archivos.dniDorso)return"Subí las fotos del frente y dorso de tu DNI"}if(wizPaso===2){if(!a.email||!a.tel||!a.localidad)return"Completá correo, teléfono y localidad";if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email))return"El correo no tiene un formato válido"}if(wizPaso===3){if(!a.condicionFiscal)return"Seleccioná tu condición fiscal";if(a.condicionFiscal!=="No inscripto"){if(!a.cuit)return"Ingresá tu CUIT";if(!/^\d{2}-?\d{8}-?\d$/.test(a.cuit.replace(/\s/g,"")))return"El CUIT debe tener el formato 20-35123456-7";if(!a.fechaInscripcion)return"Ingresá la fecha de inscripción";if(a.condicionFiscal==="Monotributista"&&!a.categoriaMono)return"Seleccioná tu categoría de monotributo";if(!archivos.constancia)return"Subí tu constancia de inscripción de AFIP — es obligatoria"}}if(wizPaso===4){if(!a.cbu)return"Ingresá tu CBU o CVU para poder pagarte";if(!/^\d{22}$/.test(a.cbu.replace(/\s|-/g,"")))return"El CBU debe tener exactamente 22 dígitos";if(!a.cuentaSueldo)return"Decinos si esa cuenta es tu cuenta sueldo";if(!a.pass||a.pass.length<6)return"La contraseña debe tener al menos 6 caracteres";if(a.pass!==a.pass2)return"Las contraseñas no coinciden";if(!(a.acepta1&&a.acepta2&&a.acepta3&&a.acepta4))return"Tenés que aceptar las cuatro condiciones del acuerdo"}return null}function wizSiguiente(){leerPaso();const a=validarPaso();if(a)return toast("⚠ "+a,"error");wizPaso++,render()}function wizAtras(){leerPaso(),wizPaso--,render()}async function finalizarRegistro(){leerPaso();const a=validarPaso();if(a)return toast("⚠ "+a,"error");const e=regData;cargando(!0,"Creando tu cuenta…");const{data:i,error:s}=await sb.auth.signUp({email:e.email,password:e.pass});if(s)return cargando(!1),toast(mensajeError(s),"error");const c=i.user&&i.user.id;if(!c)return cargando(!1),toast("No se pudo crear la cuenta. Intentá de nuevo.","error");if(!i.session)return cargando(!1),modal("Revisá tu correo",`<div class="note g">
+  </label>`}function tomarArchivo(a,e){const i=e.files[0];if(!i)return;if(i.size>5*1024*1024)return toast("El archivo supera los 5 MB","error");archivos[a]=i;const s=$("dz_"+a);s.classList.add("has"),s.querySelector(".ic").textContent="✓",s.querySelector("b").textContent=i.name,s.querySelector("small").textContent="Archivo cargado — clic para reemplazar"}/* Las tildes del acuerdo se leen RECORRIENDO condicionesAlta(), no nombrando
+   acepta1..acepta4 a mano. Es lo que permite que aparezca una quinta
+   condición sin tocar tres lugares, y sobre todo lo que evita el error
+   silencioso de agregarla y que el validador no la exija: la lista de
+   condiciones es una sola, y el render, la lectura y la validación salen
+   todos de ella. */
+function leerTildesCondiciones(){condicionesAlta().forEach(function(c){regData[c[1]]=!!($(c[0])&&$(c[0]).checked)})}
+function leerPaso(){const a=e=>$(e)?$(e).value.trim():"";wizPaso===1&&Object.assign(regData,{nombre:a("rNombre"),apellido:a("rApellido"),dni:a("rDni"),nacimiento:a("rNacimiento")}),wizPaso===2&&Object.assign(regData,{email:a("rEmail"),tel:a("rTel"),provincia:a("rProvincia"),localidad:a("rLocalidad"),domicilio:a("rDomicilio"),experiencia:a("rExperiencia"),rubro:a("rRubro"),concesionaria:a("rConcesionaria")}),wizPaso===3&&Object.assign(regData,{condicionFiscal:a("rCondicion"),cuit:a("rCuit"),fechaInscripcion:a("rFechaInsc"),categoriaMono:a("rCategoria")}),wizPaso===4&&Object.assign(regData,{cbu:a("rCbu"),aliasCbu:a("rAlias"),banco:a("rBanco"),cuentaSueldo:a("rCuentaSueldo"),pass:a("rPass"),pass2:a("rPass2")}),wizPaso===4&&leerTildesCondiciones()}function validarPaso(){const a=regData;if(wizPaso===1){if(!a.nombre||!a.apellido||!a.dni||!a.nacimiento)return"Completá nombre, apellido, DNI y fecha de nacimiento";if(!/^\d{7,8}$/.test(a.dni))return"El DNI debe tener 7 u 8 dígitos, sin puntos";if((Date.now()-new Date(a.nacimiento))/315576e5<18)return"Tenés que ser mayor de 18 años para operar";if(!archivos.dniFrente||!archivos.dniDorso)return"Subí las fotos del frente y dorso de tu DNI"}if(wizPaso===2){if(!a.email||!a.tel||!a.localidad)return"Completá correo, teléfono y localidad";if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email))return"El correo no tiene un formato válido"}if(wizPaso===3){if(!a.condicionFiscal)return"Seleccioná tu condición fiscal";if(a.condicionFiscal!=="No inscripto"){if(!a.cuit)return"Ingresá tu CUIT";if(!/^\d{2}-?\d{8}-?\d$/.test(a.cuit.replace(/\s/g,"")))return"El CUIT debe tener el formato 20-35123456-7";if(!a.fechaInscripcion)return"Ingresá la fecha de inscripción";if(a.condicionFiscal==="Monotributista"&&!a.categoriaMono)return"Seleccioná tu categoría de monotributo";if(!archivos.constancia)return"Subí tu constancia de inscripción de AFIP — es obligatoria"}}if(wizPaso===4){if(!a.cbu)return"Ingresá tu CBU o CVU para poder pagarte";if(!/^\d{22}$/.test(a.cbu.replace(/\s|-/g,"")))return"El CBU debe tener exactamente 22 dígitos";if(!a.cuentaSueldo)return"Decinos si esa cuenta es tu cuenta sueldo";if(!a.pass||a.pass.length<6)return"La contraseña debe tener al menos 6 caracteres";if(a.pass!==a.pass2)return"Las contraseñas no coinciden";const cnd=condicionesAlta();if(cnd.some(function(c){return!a[c[1]]}))return"Tenés que aceptar las "+(CANT_PALABRA[cnd.length]||cnd.length)+" condiciones del acuerdo"}return null}function wizSiguiente(){leerPaso();const a=validarPaso();if(a)return toast("⚠ "+a,"error");wizPaso++,render()}function wizAtras(){leerPaso(),wizPaso--,render()}async function finalizarRegistro(){leerPaso();const a=validarPaso();if(a)return toast("⚠ "+a,"error");const e=regData;cargando(!0,"Creando tu cuenta…");const{data:i,error:s}=await sb.auth.signUp({email:e.email,password:e.pass});if(s)return cargando(!1),toast(mensajeError(s),"error");const c=i.user&&i.user.id;if(!c)return cargando(!1),toast("No se pudo crear la cuenta. Intentá de nuevo.","error");if(!i.session)return cargando(!1),modal("Revisá tu correo",`<div class="note g">
       Te enviamos un correo a <b>${e.email}</b> para confirmar tu cuenta.
       Confirmalo y volvé a ingresar para completar tu registro.</div>`,[{txt:"Entendido",clase:"",fn:"cerrarModal();ir('login')"}]);cargando(!0,"Subiendo documentos…");const o={};for(const t of["dniFrente","dniDorso","constancia"]){const l=archivos[t];if(!l)continue;const p=l.name.split(".").pop().toLowerCase(),r=`${c}/${t}.${p}`,{error:d}=await sb.storage.from("documentos").upload(r,l,{upsert:!0});if(d)return cargando(!1),toast("Error al subir "+l.name+": "+mensajeError(d),"error");o[t]=r}cargando(!0,"Guardando tus datos…");const{error:n}=await sb.from("perfiles").insert({id:c,nombre:e.nombre,apellido:e.apellido,dni:e.dni,nacimiento:e.nacimiento,tel:e.tel,provincia:e.provincia,localidad:e.localidad,domicilio:e.domicilio||null,cuit:e.cuit||null,condicion_fiscal:e.condicionFiscal,categoria_mono:e.categoriaMono||null,fecha_inscripcion:e.fechaInscripcion||null,constancia_path:o.constancia||null,dni_frente_path:o.dniFrente||null,dni_dorso_path:o.dniDorso||null,cbu:e.cbu,alias_cbu:e.aliasCbu||null,banco:e.banco||null,cuenta_sueldo:e.cuentaSueldo?e.cuentaSueldo==="si":null,cuenta_sueldo_declarada_en:e.cuentaSueldo?new Date().toISOString():null,experiencia:e.experiencia||null,rubro:e.rubro||null,concesionaria:e.concesionaria||"no"});if(n)return cargando(!1),toast(mensajeError(n),"error");const q=await guardarCondicionesAlta(c);await cargarSesion(),await cargarTodo(),cargando(!1),vista="panel",render(),toast(q?"Cuenta creada. Queda <b>pendiente de verificación</b> hasta que revisemos tu constancia.":"Cuenta creada. No pudimos registrar tu aceptación de las condiciones: te las vamos a volver a pedir.","ok")}function vCatalogo(){if(!perfil)return vLogin();const a=NIVELES[perfil.nivel],e=cupoEfectivo(perfil,penas),i=asigs.length;let s=vehiculos.slice();if(filtro.gama&&(s=s.filter(o=>o.gama===filtro.gama)),filtro.texto){const o=filtro.texto.toLowerCase();s=s.filter(n=>(n.marca+" "+n.modelo+" "+(n.ubicacion||"")).toLowerCase().includes(o))}filtro.orden==="precio-asc"?s.sort((o,n)=>o.precio-n.precio):filtro.orden==="precio-desc"&&s.sort((o,n)=>n.precio-o.precio);const c=asigs.map(o=>o.vehiculo_id);return`<div class="wrap">
     ${perfil.estado_verificacion!=="aprobado"?`<div class="note w" style="margin-bottom:20px">
