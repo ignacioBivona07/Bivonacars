@@ -898,11 +898,231 @@ function diasEntre(desde, hasta){
 function mesDePago(p){ return String(p.acreditado_en || p.creado_en || p.fecha || '').slice(0,7); }
 function vacio(texto){ return '<div class="mini">'+texto+'</div>'; }
 
+/* ═══════════════════════════════════════════════════════════════
+   REGALOS DE KARI, ANOTADOS EN LA VENTA
+
+   BIVONACARS-MERCHANDISING.md §7 punto 6: si el regalo entregado no
+   queda anotado en la operación, en seis meses no se puede contestar
+   si el regalo movió algo. Esto es ese registro, y la pantalla que
+   después contesta la pregunta.
+
+   La decisión que vale la pena escribir: una venta sin regalo anotado
+   NO se cuenta como "venta sin regalo". Las dos cosas se parecen y no
+   son lo mismo — la primera puede ser una venta con regalo que nadie
+   cargó. Las ventas cerradas antes de que existiera el campo se
+   cuentan aparte, como "antes del registro", y las de después sin
+   nada cargado quedan en "sin cargar". Sólo se compara contra "sin
+   regalo" lo que alguien marcó expresamente como sin regalo.
+
+   Por eso hay tres estados y no dos, y por eso el formulario tiene el
+   botón "No se entregó nada": sin ese botón, el "sin regalo" sería
+   siempre una suposición.
+
+   El presupuesto que muestra el formulario es el 10% de la comisión
+   de la empresa, que es la regla del punto 2.1 del documento. El 6%
+   contra 10% sigue siendo decisión de Ignacio (ítem 3 del checklist
+   de KARI): acá el número no se aplica ni se bloquea nada, sólo se
+   muestra al lado de lo que se cargó.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Desde cuándo existe el campo. Lo anterior no es "sin regalo": es
+   "no se podía anotar". */
+var REGALO_DESDE = '2026-10-08';
+
+/* El catálogo del documento de KARI, para sugerir y no para limitar:
+   el campo es de texto libre porque los tramos regalan combinaciones
+   ("Llavero + chomba") y porque el catálogo va a crecer. */
+var KARI_PIEZAS = ['Llavero','Chomba','Sweater','Perfume','Gorra','Billetera','Bolso',
+  'Cartera','Cinturón','Medias','Bufanda','Anteojos de sol','Reloj','Calzado',
+  'Llavero + chomba','Llavero + sweater','Llavero + sweater + perfume'];
+
+/* La tabla de tramos del punto 2.2, con el presupuesto que sale del
+   10% de la comisión y no del precio del auto. */
+function tramoDeVenta(op){
+  var precio = Number(op.precio) || 0;
+  if(precio <  8000) return { nombre:'hasta USD 8.000',        sugerido:'Llavero' };
+  if(precio < 15000) return { nombre:'USD 8.000 – 15.000',     sugerido:'Llavero + chomba' };
+  if(precio < 30000) return { nombre:'USD 15.000 – 30.000',    sugerido:'Llavero + chomba' };
+  if(precio < 60000) return { nombre:'USD 30.000 – 60.000',    sugerido:'Llavero + sweater' };
+  return                     { nombre:'más de USD 60.000',     sugerido:'Llavero + sweater + perfume' };
+}
+
+/* Los tres estados, calculados en un solo lugar para que la tabla y
+   los totales no puedan discrepar. */
+function estadoRegalo(op){
+  if(op.regalo_pieza === 'Sin regalo')       return 'sin';
+  if(op.regalo_pieza)                        return 'con';
+  if(String(op.fecha||'') < REGALO_DESDE)    return 'previo';
+  return 'vacio';
+}
+
+function presupuestoRegalo(op){ return (Number(op.com_empresa) || 0) * 0.10; }
+
+
+window.formRegalo = function(id){
+  var op = (D.operaciones||[]).filter(function(o){ return o.id === id; })[0];
+  if(!op) return toast('No se encontró la venta','error');
+
+  var tramo = tramoDeVenta(op), tope = presupuestoRegalo(op);
+  var yaPuesto = op.regalo_pieza === 'Sin regalo' ? '' : (op.regalo_pieza || '');
+
+  modal('Regalo de KARI — ' + esc(op.vehiculo_desc),
+    '<div class="note w" style="margin-bottom:14px">'+
+      '<b>Tramo ' + tramo.nombre + '.</b> La comisión de esta venta es ' + fmtUSD(op.com_empresa) +
+      ', así que el presupuesto del regalo es <b>' + fmtUSD(Math.round(tope)) + '</b> ' +
+      '(el 10% que propone el punto 2.1). Lo que sugiere la tabla de tramos para este auto: ' +
+      '<b>' + tramo.sugerido + '</b>. Ninguno de los dos números bloquea nada — se muestran al lado ' +
+      'de lo que cargues.</div>'+
+    '<div class="grid2">'+
+      '<div class="fld"><label>Qué se entregó</label>'+
+        '<input id="rgPieza" list="rgLista" value="'+esc(yaPuesto)+'" placeholder="'+esc(tramo.sugerido)+'">'+
+        '<datalist id="rgLista">'+KARI_PIEZAS.map(function(x){
+          return '<option value="'+esc(x)+'">'; }).join('')+'</datalist></div>'+
+      '<div class="fld"><label>Qué costó (USD)</label>'+
+        '<input id="rgCosto" type="number" step="0.01" min="0" value="'+esc(op.regalo_costo_usd||'')+'" '+
+        'placeholder="0"></div>'+
+    '</div>'+
+    '<div class="fld"><label>Cuándo se entregó</label>'+
+      '<input id="rgFecha" type="date" value="'+esc(op.regalo_fecha || op.fecha || '')+'">'+
+      '<div class="mini">Puede ser posterior a la venta: el regalo se suele dar en la entrega '+
+      'del auto, no al firmar el boleto.</div></div>'+
+    '<div class="mini" style="margin-top:10px">El costo se carga en USD, igual que la comisión, '+
+    'para que el porcentaje salga sin convertir nada.</div>',
+    [{txt:'Cancelar', clase:'btn-o', fn:'cerrarModal()'},
+     {txt:'No se entregó nada', clase:'btn-o', fn:'guardarRegalo('+id+',true)'},
+     {txt:'Guardar', clase:'', fn:'guardarRegalo('+id+',false)'}]);
+};
+
+window.guardarRegalo = async function(id, nada){
+  var datos;
+  if(nada){
+    datos = { regalo_pieza:'Sin regalo', regalo_costo_usd:null, regalo_fecha:null };
+  } else {
+    var pieza = val('rgPieza');
+    if(!pieza) return toast('Poné qué se entregó, o usá "No se entregó nada"','error');
+    if(pieza === 'Sin regalo') return toast('Para eso está el botón "No se entregó nada"','error');
+    var costo = val('rgCosto') === '' ? null : Number(val('rgCosto'));
+    if(costo !== null && !(costo >= 0)) return toast('El costo no puede ser negativo','error');
+    datos = { regalo_pieza:pieza, regalo_costo_usd:costo, regalo_fecha:val('rgFecha') || null };
+  }
+  cargando(true,'Guardando…');
+  var r = await sb.from('operaciones').update(datos).eq('id', id);
+  cargando(false);
+  if(r.error) return toast(mensajeError(r.error),'error');
+  cerrarModal(); await cargarTodo(); render();
+  toast(nada ? 'Anotado: esta venta fue sin regalo' : 'Regalo anotado','ok');
+};
+
+/* ── La pantalla que contesta la pregunta ──────────────────────────
+   Dos grupos comparables (con regalo marcado / sin regalo marcado) y
+   dos que no entran en la comparación pero que hay que mostrar para
+   que los números cierren. */
+function vistaStatsRegalos(){
+  var ops = (D.operaciones || []).slice();
+
+  var g = { con:[], sin:[], previo:[], vacio:[] };
+  ops.forEach(function(o){ g[estadoRegalo(o)].push(o); });
+
+  function prom(lista, campo){
+    if(!lista.length) return 0;
+    return lista.reduce(function(s,o){ return s + (Number(o[campo])||0); }, 0) / lista.length;
+  }
+  var gastado = g.con.reduce(function(s,o){ return s + (Number(o.regalo_costo_usd)||0); }, 0);
+  var sinCosto = g.con.filter(function(o){ return o.regalo_costo_usd == null; }).length;
+
+  var comCon = prom(g.con,'com_empresa'), comSin = prom(g.sin,'com_empresa');
+  var tkCon  = prom(g.con,'precio'),      tkSin  = prom(g.sin,'precio');
+  var comparable = g.con.length > 0 && g.sin.length > 0;
+
+  var aviso = comparable
+    ? '<div class="note w" style="margin-bottom:18px"><b>Qué mirás acá.</b> '+
+      'La comparación de abajo tiene '+g.con.length+' venta'+(g.con.length>1?'s':'')+' con regalo '+
+      'contra '+g.sin.length+' sin regalo. Con esta cantidad de ventas la diferencia '+
+      '<b>todavía no prueba nada</b>: sirve para ver cómo se va moviendo, no para decidir.</div>'
+    : '<div class="note" style="margin-bottom:18px"><b>Todavía no se puede comparar.</b> '+
+      'Para que la pregunta "¿el regalo mueve algo?" tenga respuesta hacen falta ventas '+
+      'de los dos lados: con regalo anotado y marcadas expresamente sin regalo. '+
+      'Hoy hay <b>'+g.con.length+'</b> con regalo y <b>'+g.sin.length+'</b> sin regalo. '+
+      'Mientras tanto lo único que hay que hacer es cargar cada venta a medida que se cierra — '+
+      'la comparación aparece sola cuando haya de los dos lados.</div>';
+
+  var filas = ops.slice().sort(function(a,b){
+    return String(b.fecha).localeCompare(String(a.fecha)); });
+
+  var ETIQUETA = {
+    con:    ['Con regalo',      '#059669'],
+    sin:    ['Sin regalo',      '#64748B'],
+    previo: ['Antes del registro','#94A3B8'],
+    vacio:  ['Sin cargar',      '#D97706']
+  };
+
+  var tabla = filas.length
+    ? '<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Vehículo</th>'+
+      '<th>Comisión</th><th>Regalo</th><th>Costo</th><th>% de la comisión</th><th></th></tr></thead><tbody>'+
+      filas.map(function(o){
+        var e = estadoRegalo(o), et = ETIQUETA[e];
+        var tope = presupuestoRegalo(o);
+        var costo = Number(o.regalo_costo_usd);
+        var pct = (e === 'con' && o.regalo_costo_usd != null && tope > 0)
+          ? (costo / (Number(o.com_empresa)||1)) * 100 : null;
+        return '<tr'+(e==='previo'?' style="opacity:.5"':'')+'>'+
+          '<td>'+fmtFecha(o.fecha)+'</td>'+
+          '<td><b>'+esc(o.vehiculo_desc)+'</b>'+
+            (o.regalo_fecha && o.regalo_fecha !== o.fecha
+              ? '<div class="mini">regalo entregado el '+fmtFecha(o.regalo_fecha)+'</div>' : '')+'</td>'+
+          '<td>'+fmtUSD(o.com_empresa)+'</td>'+
+          '<td><span style="color:'+et[1]+';font-weight:700">'+
+            (e==='con' ? esc(o.regalo_pieza) : et[0])+'</span></td>'+
+          '<td>'+(o.regalo_costo_usd != null ? fmtUSD(costo)
+                 : (e==='con' ? '<span class="mini">sin cargar</span>' : '—'))+'</td>'+
+          '<td>'+(pct != null
+            ? '<b style="color:'+(pct > 10 ? '#DC2626' : '#059669')+'">'+pct.toFixed(1)+'%</b>'+
+              (pct > 10 ? '<div class="mini">pasa el 10% del punto 2.1</div>' : '')
+            : '—')+'</td>'+
+          '<td><button class="btn btn-sm btn-o" onclick="formRegalo('+o.id+')">'+
+            (e==='con'||e==='sin' ? 'Cambiar' : 'Anotar')+'</button></td></tr>';
+      }).join('')+'</tbody></table></div>'
+    : vacio('Todavía no hay ventas cerradas.');
+
+  return '<div style="max-width:1040px">'+
+    aviso+
+    '<div class="kpis" style="margin-bottom:18px">'+
+      '<div class="kpi g"><div class="lb">Ventas con regalo</div><div class="vl">'+g.con.length+'</div>'+
+        '<div class="df">'+(sinCosto ? sinCosto+' sin costo cargado' : 'todas con costo')+'</div></div>'+
+      '<div class="kpi"><div class="lb">Ventas sin regalo</div><div class="vl">'+g.sin.length+'</div>'+
+        '<div class="df">marcadas a mano</div></div>'+
+      '<div class="kpi '+(g.vacio.length?'p':'')+'"><div class="lb">Sin cargar</div>'+
+        '<div class="vl">'+g.vacio.length+'</div>'+
+        '<div class="df">'+(g.vacio.length?'hay que anotarlas':'ninguna pendiente')+'</div></div>'+
+      '<div class="kpi a"><div class="lb">Gastado en regalos</div><div class="vl">'+fmtUSD(Math.round(gastado))+'</div>'+
+        '<div class="df">'+(g.previo.length ? g.previo.length+' venta'+(g.previo.length>1?'s':'')+' previa'+(g.previo.length>1?'s':'')+' al registro' : 'histórico cargado')+'</div></div>'+
+    '</div>'+
+
+    tarjeta('¿El regalo mueve algo?','Promedios de los dos grupos comparables',
+      '<table><thead><tr><th></th><th>Ventas</th><th>Ticket promedio</th>'+
+      '<th>Comisión promedio</th></tr></thead><tbody>'+
+      '<tr><td><b style="color:#059669">Con regalo</b></td><td>'+g.con.length+'</td>'+
+        '<td>'+(g.con.length?fmtUSD(Math.round(tkCon)):'—')+'</td>'+
+        '<td>'+(g.con.length?fmtUSD(Math.round(comCon)):'—')+'</td></tr>'+
+      '<tr><td><b style="color:#64748B">Sin regalo</b></td><td>'+g.sin.length+'</td>'+
+        '<td>'+(g.sin.length?fmtUSD(Math.round(tkSin)):'—')+'</td>'+
+        '<td>'+(g.sin.length?fmtUSD(Math.round(comSin)):'—')+'</td></tr>'+
+      '</tbody></table>'+
+      '<div class="mini" style="margin-top:10px">Las ventas <b>antes del registro</b> '+
+      '('+g.previo.length+') y las <b>sin cargar</b> ('+g.vacio.length+') no entran en esta '+
+      'comparación a propósito: no se sabe si llevaron regalo, y meterlas de un lado '+
+      'inventaría el resultado.</div>')+
+
+    tarjeta('Venta por venta','Anotá el regalo cuando lo entregues', tabla)+
+  '</div>';
+}
+
 function vistaEstadisticas(){
   if(!puedo('estadisticas')) return sinPermiso('estadísticas');
 
   var pestanas = [['mes','Mes a mes'],['comisionistas','Por comisionista'],
-                  ['vehiculos','Por vehículo'],['caja','Flujo de caja']];
+                  ['vehiculos','Por vehículo'],['caja','Flujo de caja'],
+                  ['regalos','Regalos KARI']];
 
   var barra = '<div style="max-width:1040px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'+
     pestanas.map(function(p){
@@ -913,6 +1133,7 @@ function vistaEstadisticas(){
   var cuerpo = statsVista === 'comisionistas' ? vistaStatsComisionistas()
              : statsVista === 'vehiculos'     ? vistaStatsVehiculos()
              : statsVista === 'caja'          ? vistaStatsCaja()
+             : statsVista === 'regalos'       ? vistaStatsRegalos()
              : vistaStatsMes();
 
   return barra + cuerpo;
