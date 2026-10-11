@@ -12,7 +12,7 @@ var FOTOS = BASE + '/storage/v1/object/public/vehiculos/';
 /* Datos que maneja este archivo */
 var C = { clientes:[], interacciones:[], reservas:[], cobros:[], transferencias:[],
           comisiones:[], notificaciones:[], internos:{}, fotos:{}, permutas:[],
-          precios:[], auditoria:[] };
+          precios:[], auditoria:[], resenas:[] };
 
 var clienteAbierto = null, vehiculoEditando = null, filtroCli = { texto:'', etapa:'', mias:false };
 
@@ -1646,7 +1646,8 @@ async function cargarCrm(){
     sb.from('notificaciones').select('*').order('creado_en',{ascending:false}).limit(40),
     sb.from('vehiculos_internos').select('*'),
     sb.from('vehiculo_fotos').select('*').order('orden'),
-    sb.from('historial_precios').select('*').order('creado_en',{ascending:false}).limit(300)
+    sb.from('historial_precios').select('*').order('creado_en',{ascending:false}).limit(300),
+    sb.from('resenas').select('*').order('creado_en',{ascending:false})
   ];
   if(perfil && perfil.es_dueno)
     pedidos.push(sb.from('auditoria').select('*').order('creado_en',{ascending:false}).limit(200));
@@ -1663,7 +1664,8 @@ async function cargarCrm(){
   C.comisiones     = r[5].data || [];
   C.notificaciones = r[6].data || [];
   C.precios        = r[9].data || [];
-  C.auditoria      = (r[10] && r[10].data) || [];
+  C.resenas        = r[10].data || [];
+  C.auditoria      = (r[11] && r[11].data) || [];
 
   C.internos = {};
   (r[7].data || []).forEach(function(i){ C.internos[i.vehiculo_id] = i; });
@@ -1674,6 +1676,399 @@ async function cargarCrm(){
 }
 window.cargarCrm = cargarCrm;
 
+/* ═══════════════════════════════════════════════════════════════
+   8bis. BORRAR DATOS — irreversible, y por eso vive en un solo lugar
+
+   Ignacio pidió poder borrar los datos de las publicaciones de prueba
+   y seguir borrando a futuro. Lo que sigue es esa capacidad.
+
+   Tres decisiones de diseño que conviene no deshacer:
+
+   1) Está TODO en una sección aparte y no hay botones de borrar
+      repartidos por las pantallas de trabajo. Un botón "Borrar" al lado
+      de "Editar" en el stock se aprieta por error un martes a la
+      mañana; uno que está en una sección que se llama "Borrar datos" se
+      aprieta a propósito.
+
+   2) Pide escribir la palabra BORRAR. No es burocracia: un `confirm()`
+      se contesta con la barra espaciadora sin leerlo, y acá no hay
+      papelera ni "deshacer" de ningún tipo.
+
+   3) Es sólo del dueño (`REQUIERE.limpieza = '__dueno__'`), aunque
+      algunas de las tablas se puedan borrar con un permiso de área. Un
+      permiso se le da a alguien para que trabaje, y borrar no es
+      trabajo de todos los días.
+
+   Lo que el borrado NO se lleva, y es a propósito: el disparador
+   `auditar` guarda la fila completa en `auditoria.antes` al borrarla,
+   para vehiculos, operaciones, clientes, transferencias, reservas,
+   cobros, permutas, gastos y vehiculos_internos. O sea que una venta
+   borrada se puede leer después en Movimientos. Eso es lo que hace que
+   este botón sea usable sin miedo, y es la razón por la que las
+   aceptaciones de términos y la auditoría misma no se borran desde acá.
+   ═══════════════════════════════════════════════════════════════ */
+
+var borradoPendiente = null;
+
+/* El pedido de confirmación, uno solo para todos los casos. `lineas` es
+   lo que se va a llevar el borrado, dicho en castellano y contado: lo
+   que hace que alguien se dé cuenta a tiempo no es la advertencia, es
+   ver que además de la venta se van tres cobros. */
+function pedirBorrado(titulo, lineas, ejecutar){
+  borradoPendiente = { ejecutar: ejecutar };
+  modal('Borrar ' + titulo,
+    '<div class="note" style="margin-bottom:14px"><b>Esto no se puede deshacer.</b> '+
+    'No hay papelera: lo que se borra desaparece de la base.</div>'+
+    '<div style="font-size:.88rem;line-height:1.7;margin-bottom:14px">'+
+      '<b>Se va a borrar:</b><ul style="margin:6px 0 0 18px;padding:0">'+
+      lineas.map(function(l){ return '<li>'+l+'</li>'; }).join('')+'</ul></div>'+
+    '<div class="note g" style="margin-bottom:14px">Las tablas principales dejan la fila '+
+    'completa registrada en <b>Movimientos</b> al borrarse, así que si te equivocás se puede '+
+    'leer qué decía — no recuperar sola, pero sí leer.</div>'+
+    '<div class="fld"><label>Escribí BORRAR para confirmar</label>'+
+      '<input id="cfBorrar" placeholder="BORRAR" autocomplete="off"></div>',
+    [{txt:'Cancelar', clase:'btn-o', fn:'cancelarBorrado()'},
+     {txt:'Borrar para siempre', clase:'', fn:'ejecutarBorrado()'}]);
+}
+
+window.cancelarBorrado = function(){ borradoPendiente = null; cerrarModal(); };
+
+window.ejecutarBorrado = async function(){
+  if(val('cfBorrar') !== 'BORRAR')
+    return toast('Escribí BORRAR, en mayúsculas, para confirmar','error');
+  var acc = borradoPendiente;
+  borradoPendiente = null;
+  if(!acc) return cerrarModal();
+
+  cargando(true,'Borrando…');
+  var err = null;
+  try { err = await acc.ejecutar(); }
+  catch(e){ err = e; }
+  cargando(false);
+  if(err) return toast(mensajeError(err),'error');
+
+  cerrarModal();
+  await cargarTodo();
+  await cargarCrm();
+  render();
+  toast('Borrado','ok');
+};
+
+/* ── Las fotos son el caso especial de todo esto ──────────────────
+   `vehiculo_fotos` se borra en cascada al borrar el vehículo, pero eso
+   saca la fila y NO el archivo: el archivo vive en el bucket de Storage
+   y hay que pedirlo aparte, con la API de Storage, porque borrar la
+   fila no lo toca. Si no se hace, el bucket se llena de archivos que no
+   le sirven a nadie y se siguen pagando.
+
+   Por eso el borrado de un vehículo pide las fotos ANTES de borrar la
+   fila: si se borrara la fila primero y fallara el Storage, no quedaría
+   forma de saber qué archivos había. Al revés, si falla el Storage, el
+   vehículo sigue ahí y se puede reintentar. */
+async function borrarFotosDe(vehiculoId){
+  var r = await sb.from('vehiculo_fotos').select('ruta').eq('vehiculo_id', vehiculoId);
+  if(r.error) return r.error;
+  var rutas = (r.data || []).map(function(f){ return f.ruta; }).filter(Boolean);
+  if(!rutas.length) return null;
+  var s = await sb.storage.from('vehiculos').remove(rutas);
+  return s.error || null;
+}
+
+window.borrarVehiculo = function(id){
+  var v = (D.vehiculos || []).filter(function(x){ return x.id === id; })[0];
+  if(!v) return;
+  var fotos  = (C.fotos[id] || []).length;
+  var ventas = (D.operaciones || []).filter(function(o){ return o.vehiculo_id === id; });
+  var visitas = (D.visitas || []).filter(function(x){ return x.vehiculo_id === id; }).length;
+
+  var lineas = [
+    '<b>'+esc([v.marca, v.modelo, v.anio].filter(Boolean).join(' '))+'</b>, con su ficha interna',
+    fotos ? '<b>'+fotos+' foto'+(fotos>1?'s':'')+'</b>, también el archivo en sí' : 'ninguna foto cargada'
+  ];
+  if(visitas) lineas.push(visitas+' visita'+(visitas>1?'s':'')+' agendada'+(visitas>1?'s':''));
+  if(ventas.length) lineas.push('<b style="color:var(--amber)">La venta de este auto NO se borra</b> '+
+    '— queda registrada sin el vehículo. Si también la querés borrar, borrala en "Ventas", '+
+    'más abajo, antes o después de esto.');
+
+  pedirBorrado('el vehículo', lineas, async function(){
+    var e1 = await borrarFotosDe(id);
+    if(e1) return e1;
+    var r = await sb.from('vehiculos').delete().eq('id', id);
+    return r.error;
+  });
+};
+
+window.borrarVenta = function(id){
+  var o = (D.operaciones || []).filter(function(x){ return x.id === id; })[0];
+  if(!o) return;
+  var com = (C.comisiones || []).filter(function(c){ return c.operacion_id === id; }).length;
+  var tr  = (C.transferencias || []).filter(function(t){ return t.operacion_id === id; }).length;
+  var cob = (C.cobros || []).filter(function(c){ return c.operacion_id === id; }).length;
+
+  var lineas = ['<b>'+esc(o.vehiculo_desc || 'venta #'+id)+'</b> del '+dia(o.fecha)+
+    ', por '+usd(o.precio)+' (comisión '+usd(o.com_empresa)+')'];
+  if(com) lineas.push(com+' pago'+(com>1?'s':'')+' de comisión asociado'+(com>1?'s':''));
+  if(tr)  lineas.push(tr+' transferencia'+(tr>1?'s':'')+' de ese trámite');
+  if(cob) lineas.push(cob+' cobro'+(cob>1?'s':''));
+  lineas.push('El vehículo <b>no</b> se borra: sigue en el stock');
+
+  pedirBorrado('la venta', lineas, async function(){
+    /* Orden obligado: `pagos_comision.operacion_id` y `resenas.operacion_id`
+       están en SET NULL, así que si se borra la venta primero quedan
+       colgados apuntando a nada y siguen contando como pagos y reseñas
+       de una venta que ya no existe. Se borran antes, a mano. */
+    var a = await sb.from('pagos_comision').delete().eq('operacion_id', id);
+    if(a.error) return a.error;
+    var b = await sb.from('resenas').delete().eq('operacion_id', id);
+    if(b.error) return b.error;
+    var r = await sb.from('operaciones').delete().eq('id', id);
+    return r.error;
+  });
+};
+
+window.borrarContacto = function(id){
+  var c = (C.clientes || []).filter(function(x){ return x.id === id; })[0];
+  if(!c) return;
+  var inter = (C.interacciones || []).filter(function(i){ return i.cliente_id === id; }).length;
+  var ventas = (D.operaciones || []).filter(function(o){ return o.cliente_id === id; }).length;
+
+  var lineas = ['<b>'+esc(c.nombre+' '+(c.apellido||''))+'</b>, con su ficha personal entera'];
+  if(inter) lineas.push('<b>'+inter+'</b> contacto'+(inter>1?'s':'')+' anotado'+(inter>1?'s':'')+
+    ' en su historial — lo que el comisionista sabe de esta persona se va con ella');
+  if(ventas) lineas.push('Su'+(ventas>1?'s':'')+' '+ventas+' venta'+(ventas>1?'s':'')+
+    ' queda'+(ventas>1?'n':'')+', sin el contacto asociado');
+
+  pedirBorrado('el contacto', lineas, async function(){
+    var r = await sb.from('clientes').delete().eq('id', id);
+    return r.error;
+  });
+};
+
+window.borrarCupo = function(id){
+  var p = (D.pagos || []).filter(function(x){ return x.id === id; })[0];
+  if(!p) return;
+  pedirBorrado('el pago de cupo', [
+    'Cupo #'+id+' de '+usd(p.monto)+', estado <b>'+esc(p.estado)+'</b>, del '+dia(p.fecha),
+    p.estado === 'aprobado'
+      ? '<b style="color:var(--amber)">Está aprobado</b>: es plata que entró de verdad. '+
+        'Borrarlo la saca de las estadísticas de caja.'
+      : 'No está acreditado, así que no mueve la caja'
+  ], async function(){
+    var r = await sb.from('pagos_cupo').delete().eq('id', id);
+    return r.error;
+  });
+};
+
+window.borrarResena = function(id){
+  var r0 = (C.resenas || []).filter(function(x){ return x.id === id; })[0];
+  pedirBorrado('la reseña', [
+    'Reseña de <b>'+esc((r0 && r0.autor) || 'autor sin nombre')+'</b>'+
+    (r0 && r0.puntaje ? ', '+r0.puntaje+' de 5' : '')+
+    (r0 && r0.comentario ? ': "'+esc(r0.comentario.slice(0,80))+'"' : ' (sin texto)')
+  ], async function(){
+    var r = await sb.from('resenas').delete().eq('id', id);
+    return r.error;
+  });
+};
+
+window.borrarAvisos = function(todos){
+  var lista = (C.notificaciones || []).filter(function(n){ return todos || n.leida; });
+  if(!lista.length) return toast(todos ? 'No hay avisos' : 'No hay avisos leídos','error');
+  pedirBorrado(todos ? 'todos los avisos' : 'los avisos leídos', [
+    '<b>'+lista.length+'</b> aviso'+(lista.length>1?'s':'')+
+    (todos ? ' de tu bandeja, leídos y sin leer' : ' ya leído'+(lista.length>1?'s':''))
+  ], async function(){
+    var q = sb.from('notificaciones').delete().eq('usuario_id', perfil.id);
+    if(!todos) q = q.eq('leida', true);
+    var r = await q;
+    return r.error;
+  });
+};
+
+/* ── Fotos huérfanas ─────────────────────────────────────────────
+   Archivos que quedaron en el bucket sin fila en `vehiculo_fotos`. Pasa
+   cada vez que se borra un vehículo sin pasar por el botón de arriba
+   —por ejemplo desde el panel de Supabase, o si falló el paso de
+   Storage— y también con cualquier subida que se cortó por la mitad.
+
+   El bucket está organizado en una carpeta por vehículo, así que hay
+   que listar la raíz para saber qué carpetas hay y después cada carpeta
+   por separado: `list('')` devuelve las carpetas, no los archivos de
+   adentro. */
+var huerfanas = null;
+
+window.buscarHuerfanas = async function(){
+  cargando(true,'Revisando el bucket…');
+  try {
+    var dentro = await sb.from('vehiculo_fotos').select('ruta');
+    if(dentro.error) throw dentro.error;
+    var conocidas = {};
+    (dentro.data || []).forEach(function(f){ conocidas[f.ruta] = true; });
+
+    var raiz = await sb.storage.from('vehiculos').list('', { limit:1000 });
+    if(raiz.error) throw raiz.error;
+
+    var sueltas = [], bytes = 0;
+    for(var i=0;i<(raiz.data||[]).length;i++){
+      var e = raiz.data[i];
+      if(e.id){                                   /* archivo en la raíz */
+        if(!conocidas[e.name]){ sueltas.push(e.name);
+          bytes += (e.metadata && e.metadata.size) || 0; }
+        continue;
+      }
+      var carpeta = await sb.storage.from('vehiculos').list(e.name, { limit:1000 });
+      if(carpeta.error) continue;
+      (carpeta.data || []).forEach(function(f){
+        if(!f.id) return;
+        var ruta = e.name + '/' + f.name;
+        if(!conocidas[ruta]){ sueltas.push(ruta);
+          bytes += (f.metadata && f.metadata.size) || 0; }
+      });
+    }
+    huerfanas = { rutas: sueltas, bytes: bytes };
+  } catch(e){
+    cargando(false);
+    huerfanas = { error: String((e && e.message) || e) };
+    return render();
+  }
+  cargando(false);
+  render();
+};
+
+window.borrarHuerfanas = function(){
+  if(!huerfanas || !huerfanas.rutas || !huerfanas.rutas.length) return;
+  var n = huerfanas.rutas.length;
+  pedirBorrado('las fotos huérfanas', [
+    '<b>'+n+'</b> archivo'+(n>1?'s':'')+' del bucket <code>vehiculos</code>'+
+    (huerfanas.bytes ? ' ('+(huerfanas.bytes/1048576).toFixed(2)+' MB)' : ''),
+    'Ninguno tiene fila en <code>vehiculo_fotos</code>, así que ninguno se está mostrando '+
+    'en el sitio: son archivos que ya nadie puede ver y se siguen pagando'
+  ], async function(){
+    var r = await sb.storage.from('vehiculos').remove(huerfanas.rutas);
+    if(r.error) return r.error;
+    huerfanas = null;
+    return null;
+  });
+};
+
+function vistaLimpieza(){
+  if(!perfil || !perfil.es_dueno) return sinPermiso('borrado de datos');
+
+  var ops    = D.operaciones || [];
+  var vehs   = D.vehiculos || [];
+  var cupos  = D.pagos || [];
+  var gente  = C.clientes || [];
+  var avisos = C.notificaciones || [];
+  var resen  = C.resenas || [];
+
+  function listita(items, armar, vacioTxt){
+    return items.length
+      ? '<div class="tbl-wrap"><table><tbody>'+items.map(armar).join('')+'</tbody></table></div>'
+      : '<div class="mini">'+vacioTxt+'</div>';
+  }
+  function boton(fn){
+    return '<td style="width:1%;white-space:nowrap"><button class="btn btn-sm btn-o" '+
+      'style="color:#DC2626;border-color:#DC2626" onclick="'+fn+'">Borrar</button></td>';
+  }
+
+  return '<div style="max-width:1040px">'+
+
+    '<div class="note" style="margin-bottom:18px"><b>Acá se borra de verdad.</b> '+
+    'No hay papelera ni deshacer: lo que se borra desaparece de la base. Cada borrado pide '+
+    'escribir la palabra BORRAR, y antes te dice exactamente qué se lleva — porque casi todo '+
+    'arrastra algo más. Esta sección la ves sólo vos.</div>'+
+
+    '<div class="note g" style="margin-bottom:18px"><b>Lo que queda como rastro.</b> '+
+    'Al borrar un vehículo, una venta, un contacto o una transferencia, la fila completa queda '+
+    'guardada en <b>Movimientos</b>, con la fecha y quién la borró. No se recupera sola, pero '+
+    'se puede leer qué decía. Lo que <b>no</b> se borra desde acá, a propósito: las '+
+    'aceptaciones de términos —son la prueba de qué aceptó cada comisionista y cuándo— y la '+
+    'auditoría misma.</div>'+
+
+    tarjeta('Vehículos', vehs.length+' en la base',
+      listita(vehs, function(v){
+        var fotos = (C.fotos[v.id] || []).length;
+        var conVenta = ops.some(function(o){ return o.vehiculo_id === v.id; });
+        return '<tr><td><b>'+esc([v.marca,v.modelo,v.anio].filter(Boolean).join(' '))+'</b>'+
+          '<div class="mini">'+esc(v.estado)+' · '+usd(v.precio)+' · '+
+          (fotos?fotos+' foto'+(fotos>1?'s':''):'sin fotos')+
+          (conVenta?' · <b>tiene una venta asociada</b>':'')+'</div></td>'+
+          boton('borrarVehiculo('+v.id+')')+'</tr>';
+      }, 'No hay vehículos cargados.'))+
+
+    tarjeta('Ventas', ops.length+' operación'+(ops.length===1?'':'es')+' cerrada'+(ops.length===1?'':'s'),
+      listita(ops, function(o){
+        return '<tr><td><b>'+esc(o.vehiculo_desc || 'venta #'+o.id)+'</b>'+
+          '<div class="mini">'+dia(o.fecha)+' · '+usd(o.precio)+' · comisión '+usd(o.com_empresa)+
+          ' · '+esc(nombreDe((D.perfiles||[]).filter(function(p){ return p.id===o.usuario_id; })[0]))+
+          '</div></td>'+ boton('borrarVenta('+o.id+')')+'</tr>';
+      }, 'No hay ventas cerradas.'))+
+
+    tarjeta('Clientes y prospectos', gente.length+' contacto'+(gente.length===1?'':'s'),
+      listita(gente, function(c){
+        var inter = (C.interacciones||[]).filter(function(i){ return i.cliente_id===c.id; }).length;
+        return '<tr><td><b>'+esc(c.nombre+' '+(c.apellido||''))+'</b>'+
+          '<div class="mini">'+esc(c.tipo)+' · '+esc(c.etapa)+
+          (inter?' · '+inter+' contacto'+(inter>1?'s':'')+' anotado'+(inter>1?'s':''):'')+
+          '</div></td>'+ boton('borrarContacto('+c.id+')')+'</tr>';
+      }, 'No hay contactos cargados.'))+
+
+    tarjeta('Pagos de cupo', cupos.length+' registrado'+(cupos.length===1?'':'s'),
+      listita(cupos, function(p){
+        return '<tr><td><b>'+usd(p.monto)+'</b> · '+esc(p.estado)+
+          '<div class="mini">'+dia(p.fecha)+' · '+
+          esc(nombreDe((D.perfiles||[]).filter(function(x){ return x.id===p.usuario_id; })[0]))+
+          '</div></td>'+ boton('borrarCupo('+p.id+')')+'</tr>';
+      }, 'No hay pagos de cupo.'))+
+
+    tarjeta('Reseñas', resen.length+' cargada'+(resen.length===1?'':'s'),
+      listita(resen, function(r){
+        return '<tr><td><b>'+esc(r.autor||'sin autor')+'</b>'+
+          (r.puntaje?' · '+r.puntaje+'/5':'')+
+          '<div class="mini">'+esc(r.comentario || 'sin texto')+'</div></td>'+
+          boton('borrarResena('+r.id+')')+'</tr>';
+      }, 'No hay reseñas cargadas.'))+
+
+    tarjeta('Tus avisos', avisos.length+' en la bandeja',
+      '<div class="mini" style="margin-bottom:10px">Son tus notificaciones del panel. '+
+      'Borrarlas no toca ningún dato del negocio: sólo limpia la bandeja.</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-sm btn-o" onclick="borrarAvisos(false)">Borrar los leídos</button>'+
+        '<button class="btn btn-sm btn-o" style="color:#DC2626;border-color:#DC2626" '+
+          'onclick="borrarAvisos(true)">Borrar todos</button>'+
+      '</div>')+
+
+    tarjeta('Fotos huérfanas en el bucket', 'Archivos sin fila en la base',
+      '<div class="mini" style="margin-bottom:10px">Borrar la fila de una foto la saca del '+
+      'sitio, pero <b>no borra el archivo</b>: eso hay que pedírselo al Storage aparte. '+
+      'Esto compara el bucket contra la base y borra lo que ya nadie puede ver.</div>'+
+      (huerfanas && huerfanas.error
+        ? '<div class="note" style="margin-bottom:10px"><b>No se pudo revisar.</b> '+
+          esc(huerfanas.error)+'</div>'
+        : '')+
+      (huerfanas && huerfanas.rutas
+        ? (huerfanas.rutas.length
+            ? '<div class="note" style="margin-bottom:10px"><b>'+huerfanas.rutas.length+
+              ' archivo'+(huerfanas.rutas.length>1?'s':'')+' suelto'+
+              (huerfanas.rutas.length>1?'s':'')+'</b>'+
+              (huerfanas.bytes?' ('+(huerfanas.bytes/1048576).toFixed(2)+' MB)':'')+':<br>'+
+              '<span class="mini" style="word-break:break-all">'+
+              esc(huerfanas.rutas.slice(0,30).join('  ·  '))+
+              (huerfanas.rutas.length>30?'  …y '+(huerfanas.rutas.length-30)+' más':'')+
+              '</span></div>'
+            : '<div class="note g" style="margin-bottom:10px">El bucket está limpio: '+
+              'ningún archivo sin fila.</div>')
+        : '')+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-sm btn-o" onclick="buscarHuerfanas()">'+
+          (huerfanas ? 'Revisar de nuevo' : 'Revisar el bucket')+'</button>'+
+        (huerfanas && huerfanas.rutas && huerfanas.rutas.length
+          ? '<button class="btn btn-sm" style="background:#DC2626" onclick="borrarHuerfanas()">'+
+            'Borrar los '+huerfanas.rutas.length+' archivos</button>' : '')+
+      '</div>')+
+  '</div>';
+}
+
 /* Secciones nuevas */
 SECCIONES.clientes       = { t:'Clientes y prospectos', s:'Quién preguntó, en qué anda y cuándo volver a llamarlo', f:vistaClientes };
 SECCIONES.reservas       = { t:'Señas y reservas',      s:'Vehículos con seña puesta y cierre de operaciones',      f:vistaReservas };
@@ -1681,6 +2076,7 @@ SECCIONES.stock          = { t:'Stock y precios',       s:'Editar, pausar y cont
 SECCIONES.transferencias = { t:'Transferencias',        s:'El trámite después de la venta, paso por paso',           f:vistaTransferencias };
 SECCIONES.comisiones     = { t:'Comisiones a pagar',    s:'Lo que le debés a cada comisionista',                     f:vistaComisiones };
 SECCIONES.auditoria      = { t:'Movimientos',           s:'Quién cambió qué y cuándo',                               f:vistaAuditoria };
+SECCIONES.limpieza       = { t:'Borrar datos',          s:'Sacar de la base lo que no tiene que estar. Irreversible',  f:vistaLimpieza };
 
 /* Menú: se arma completo y después se recorta por permisos */
 MENU.splice(1, 0, { grupo:'Ventas', items:[
@@ -1695,7 +2091,8 @@ MENU.push({ grupo:'Cierre', items:[
       return C.transferencias.filter(function(t){ return t.estado!=='inscripto'; }).length; } },
   { id:'comisiones',     ic:'💵', txt:'Comisiones',     cnt:function(){
       return C.comisiones.filter(function(c){ return c.estado==='pendiente'; }).length; } },
-  { id:'auditoria',      ic:'🔍', txt:'Movimientos' }
+  { id:'auditoria',      ic:'🔍', txt:'Movimientos' },
+  { id:'limpieza',       ic:'🗑', txt:'Borrar datos' }
 ]});
 
 /* ── Cada área ve solo lo suyo ─────────────────────────────────── */
@@ -1706,7 +2103,7 @@ var REQUIERE = {
   fiscal:'fiscal', publicar:'publicar', configuracion:'configuracion',
   clientes:'clientes', reservas:'cerrar_ventas', stock:'publicar',
   transferencias:'documentacion', comisiones:'comisionistas',
-  equipo:'__dueno__', auditoria:'__dueno__'
+  equipo:'__dueno__', auditoria:'__dueno__', limpieza:'__dueno__'
 };
 var ALTERNATIVAS = {
   catalogo:      ['publicar','editar_vehiculos','cerrar_ventas'],
