@@ -640,9 +640,29 @@ window.tomarSena = function(vehiculoId, clienteId){
 
   var vence = new Date(); vence.setDate(vence.getDate()+7);
 
+  /* ── La seña avisa, no bloquea, y la diferencia es deliberada ─────
+     Acá hay plata esperando sobre el escritorio. Un bloqueo en este punto
+     se contesta escribiendo "asd" en la ficha para poder seguir, y queda
+     un campo lleno con cero memoria adentro — peor que vacío, porque
+     parece que está. La obligación de verdad está del lado del
+     comisionista, al pasar a alguien a "Interesado" o "Negociando"
+     (parche2.js), que es donde el dato ya existe y no hay apuro.
+     Acá sólo se avisa, con los nombres, para que se pida ahora que la
+     persona está enfrente. */
+  var flojos = candidatos.filter(function(c){
+    return !(c.ocupacion || c.familia || c.notas_personales || c.como_lo_conoci); });
+
   modal('Tomar una seña',
     '<div class="note g" style="margin-bottom:14px">Al guardar, el vehículo queda <b>reservado</b> y '+
     'se genera el recibo numerado para imprimir y firmar.</div>'+
+    (flojos.length
+      ? '<div class="note w" style="margin-bottom:14px"><b>'+flojos.length+
+        ' de estos compradores no tienen ficha cargada</b> ('+
+        esc(flojos.slice(0,3).map(function(c){ return c.nombre+' '+(c.apellido||''); }).join(', '))+
+        (flojos.length>3 ? ' y '+(flojos.length-3)+' más' : '')+
+        '). No te frena la seña — pero si la persona está enfrente firmando, es el mejor '+
+        'momento del año para preguntarle de qué trabaja.</div>'
+      : '')+
     '<div class="grid2">'+
       '<div class="fld"><label>Vehículo <span style="color:#DC2626">*</span></label><select id="snVeh">'+
         libres.map(function(v){

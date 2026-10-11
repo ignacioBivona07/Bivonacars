@@ -240,6 +240,18 @@ window.nuevoInteresado = function(){
       '<label class="chk"><input type="checkbox" id="inPermuta"><span>Entrega un usado</span></label>'+
       '<label class="chk"><input type="checkbox" id="inFinanc"><span>Necesita financiación</span></label>'+
     '</div>'+
+    /* ── Obligatorio, y es el unico campo nuevo obligatorio del alta ──
+       "Como llego" es el dato que solo se sabe en este momento exacto y que
+       no se recupera nunca mas: dentro de tres meses nadie se acuerda si lo
+       mando el del taller o si entro por el sitio. Y es el que decide donde
+       conviene poner la plata de publicidad, asi que no es un dato de
+       cortesia. Los demas campos de la ficha personal se piden despues,
+       cuando la relacion da para preguntarlos. */
+    '<div class="fld"><label>¿Cómo llegó a vos? <span style="color:#DC2626">*</span></label>'+
+      '<input id="inComo" placeholder="Lo mandó Ramiro del taller / entró por el sitio / cartel">'+
+      '<div class="mini">Obligatorio. Es lo único que no vas a poder reconstruir después, '+
+      'y es lo que dice de dónde vienen las ventas de verdad.</div></div>'+
+
     '<div class="fld"><label>Notas</label><textarea id="inNotas" rows="2" '+
       'placeholder="Lo llamé, le interesa pero quiere verlo el sábado."></textarea></div>',
     [{txt:'Cancelar',clase:'btn-o',fn:'cerrarModal()'},
@@ -250,6 +262,7 @@ window.guardarInteresado = async function(){
   var nombre = val('inNombre'), tel = val('inTel');
   if(!nombre) return toast('Poné el nombre','error');
   if(!tel && !val('inEmail')) return toast('Necesitás un teléfono o un correo','error');
+  if(!val('inComo')) return toast('Poné cómo llegó a vos — es lo único que después no se puede reconstruir','error');
 
   cargando(true,'Guardando…');
   var r = await sb.from('clientes').insert({
@@ -257,6 +270,7 @@ window.guardarInteresado = async function(){
     email: val('inEmail')||null,
     vehiculo_interes_id: val('inVeh') ? Number(val('inVeh')) : null,
     busca: val('inBusca')||null,
+    como_lo_conoci: val('inComo'),
     presupuesto_max: Number(val('inPres'))||null,
     proximo_contacto: val('inProximo')||null,
     temperatura: val('inTemp'),
@@ -292,9 +306,39 @@ window.anotarMio = function(id){
      {txt:'Guardar',clase:'',fn:'guardarAnotacionMia('+id+')'}]);
 };
 
+/* ── Donde muerde la obligacion, y por que muerde ACA ──────────────
+   El problema de obligar a anotar es que un bloqueo duro produce "asd": si
+   el sistema no deja seguir sin texto, el texto va a decir "ok" y queda un
+   campo lleno y cero memoria, que es peor que vacio porque parece que esta.
+   Es la misma discusion que el piso de fotos del 1 de octubre, y se
+   resuelve igual: no bloquear donde hay apuro, bloquear donde el dato ya
+   existe en la cabeza del que escribe.
+
+   Por eso el porton NO esta al cerrar la venta ni al tomar una seña --ahi
+   hay plata esperando y el bloqueo se contesta con basura--, sino al
+   MOVER A ALGUIEN A "INTERESADO" O "NEGOCIANDO". Si estas negociando con
+   una persona, ya sabes de que trabaja y con quien decide: escribirlo no
+   te cuesta nada y es justo cuando vale. Y si todavia no lo sabes, no
+   estas negociando.
+
+   Lo que pide es UNO de los cuatro campos de la ficha, no los cuatro: la
+   idea es que haya memoria, no llenar un formulario. */
+function tieneFicha(c){
+  return !!(c && (c.ocupacion || c.familia || c.notas_personales || c.como_lo_conoci));
+}
+
 window.guardarAnotacionMia = async function(id){
   var detalle = val('amDetalle');
   if(!detalle) return toast('Contá qué pasó','error');
+
+  var etapaNueva = val('amEtapa');
+  if(etapaNueva === 'interesado' || etapaNueva === 'negociando'){
+    var c = P.mios.filter(function(x){ return x.id === id; })[0];
+    if(!tieneFicha(c)){
+      return toast('Antes de pasarlo a "'+(etapaNueva==='interesado'?'Interesado':'Negociando')+
+        '" completá quién es, en Ver ficha. Si ya estás negociando, lo sabés.','error');
+    }
+  }
   cargando(true,'Guardando…');
   var a = await sb.from('interacciones').insert({
     cliente_id: id, tipo:'llamada', detalle: detalle, usuario_id: perfil.id });

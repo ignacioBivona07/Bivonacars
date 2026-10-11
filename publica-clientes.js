@@ -166,6 +166,23 @@ window.editarFicha = function(id){
     'dentro de seis meses, cuando lo llames de nuevo, va a ser la diferencia entre '+
     '"hola, ¿se acuerda de mí?" y una charla de verdad.</div>'+
 
+    /* ── Lo que no va, y por que se dice aca y no en un reglamento ──
+       Esto es informacion sobre una persona que no es usuaria del sistema y
+       que nunca paso por ningun formulario: la Ley 25.326 la protege igual.
+       Su art. 7 prohibe guardar datos sensibles --salud, religion, opinion
+       politica, vida sexual, origen racial-- sin base legal especial, y un
+       campo que pregunta "para tener en cuenta" es exactamente donde
+       termina escrito "esta haciendo quimio". No por mala intencion: porque
+       es informacion util para atender bien y nadie le dijo que no va ahi.
+
+       Va en el formulario y no en un reglamento aparte porque se lee en el
+       momento en que se escribe, que es el unico momento en que sirve. */
+    '<div class="note w" style="margin-bottom:14px"><b>Qué no anotar.</b> '+
+    'Nada de salud, religión, política, orientación sexual ni origen — ni del cliente ni de '+
+    'su familia. No es una formalidad: son datos que la ley protege especialmente y que no '+
+    'podemos guardar. Anotá lo que te sirve para venderle mejor: cómo trabaja, cómo decide, '+
+    'qué necesita, cuándo se lo puede llamar.</div>'+
+
     '<div class="fld"><label>¿De qué trabaja?</label>'+
       '<textarea id="fkOcupacion" rows="2" placeholder="Albañil, tiene su cuadrilla. '+
       'Trabaja por su cuenta.">'+esc(c.ocupacion||'')+'</textarea></div>'+
@@ -276,6 +293,14 @@ function vistaGente(){
            c.etapa !== 'comprado' && c.etapa !== 'perdido'; }).length;
   var clientes = K.gente.filter(function(c){ return c.etapa === 'comprado'; }).length;
 
+  /* ── El contador, que es la pata que NO bloquea ──────────────────
+     El portón de la etapa (parche2.js) obliga en un punto; esto empuja
+     todo el tiempo sin obligar en ninguno, que es lo que de verdad mueve
+     el número sin producir texto de relleno. Cuenta y nombra: una cuenta
+     sin los nombres al lado no se resuelve nunca. */
+  var sinFicha = K.gente.filter(function(c){
+    return !(c.ocupacion || c.familia || c.notas_personales || c.como_lo_conoci); });
+
   function chip(id, txt, n){
     return '<button class="btn '+(K.filtro===id?'':'btn-o')+' btn-sm" '+
       'onclick="filtroGente(\''+id+'\')">'+txt+
@@ -289,6 +314,19 @@ function vistaGente(){
       '<p class="sub">Tu gente. Cuanto mejor los conozcas, más fácil es la segunda charla.</p></div>'+
       '<button class="btn btn-sm" onclick="nuevoInteresado()">+ Cargar persona</button>'+
     '</div>'+
+
+    (sinFicha.length
+      ? '<div class="note" style="margin-bottom:16px"><b>'+sinFicha.length+' de tus '+
+        K.gente.length+' no tienen ficha.</b> '+
+        esc(sinFicha.slice(0,4).map(nom).join(', '))+
+        (sinFicha.length>4 ? ' y '+(sinFicha.length-4)+' más' : '')+
+        '. Abrí la ficha y poné aunque sea de qué trabaja: es lo que hace que la segunda '+
+        'llamada no arranque de cero. Sin eso, el sistema no te deja pasarlos a '+
+        '<b>Interesado</b> ni a <b>Negociando</b>.</div>'
+      : (K.gente.length
+          ? '<div class="note g" style="margin-bottom:16px"><b>Tus '+K.gente.length+
+            ' tienen ficha.</b> Eso es lo que hace que te acuerdes de cada uno.</div>'
+          : ''))+
 
     (pend
       ? '<div class="note w" style="margin-bottom:16px"><b>Tenés '+pend+' persona'+
