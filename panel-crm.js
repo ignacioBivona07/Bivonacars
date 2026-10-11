@@ -246,6 +246,56 @@ function vistaClientes(){
 window.tabClientes  = function(t){ filtroCli.tab = t; render(); };
 window.filtrarEtapa = function(e){ filtroCli.etapa = (filtroCli.etapa === e ? '' : e); render(); };
 
+/* ── "Quién es": lo que el comisionista anota de la persona ──────────
+   Estos cuatro campos los carga el comisionista desde su propia pantalla
+   (publica-clientes.js) y hasta ahora el panel no los mostraba: el dueño
+   veía el teléfono, el presupuesto y la etapa, pero no lo que su red
+   sabía del cliente. O sea que el dato más valioso del CRM vivía en el
+   sistema y no llegaba a la única persona que mira todo.
+
+   Va en bloque aparte y no en la grilla de arriba porque es texto largo y
+   sin límite: un párrafo de cuatro líneas en una grilla de dos columnas
+   no se lee. Y va DESPUÉS de la operación a propósito: primero para qué
+   llamó, después quién es.
+
+   Se muestra tal como lo escribió el comisionista, con los saltos de
+   línea (`pre-wrap`) y escapado. Acá no se edita: lo que el comisionista
+   sabe lo escribe el comisionista. El panel lo lee. */
+function bloqueQuienEs(c){
+  var campos = [
+    ['De qué trabaja',      c.ocupacion],
+    ['Familia',             c.familia],
+    ['Cómo llegó',          c.como_lo_conoci],
+    ['Para tener en cuenta', c.notas_personales]
+  ].filter(function(x){ return x[1]; });
+
+  var quien = c.comisionista_id
+    ? nombreDe(D.perfiles.filter(function(p){ return p.id === c.comisionista_id; })[0])
+    : null;
+
+  if(!campos.length){
+    return '<div style="margin-top:16px;padding:13px 15px;background:var(--bg);'+
+      'border:1px solid var(--line);border-radius:10px">'+
+      '<div style="font-weight:800;color:var(--navy);font-size:.88rem;margin-bottom:3px">Quién es</div>'+
+      '<div class="mini">Sin anotar.'+
+      (quien ? ' Lo trajo '+esc(quien)+', y todavía no cargó la ficha personal.' : '')+
+      ' Es lo que hace que el próximo llamado no arranque de cero.</div></div>';
+  }
+
+  return '<div style="margin-top:16px;padding:15px 16px 6px;background:var(--bg);'+
+    'border:1px solid var(--line);border-radius:10px">'+
+    '<div style="font-weight:800;color:var(--navy);font-size:.88rem;margin-bottom:2px">Quién es</div>'+
+    '<div class="mini" style="margin-bottom:11px">Lo anotó '+
+      (quien ? esc(quien) : 'el comisionista')+' en su ficha. Acá se lee, no se edita.</div>'+
+    campos.map(function(x){
+      return '<div style="margin-bottom:12px">'+
+        '<div class="mini" style="font-weight:700;color:var(--navy)">'+x[0]+'</div>'+
+        '<div style="font-size:.85rem;line-height:1.6;white-space:pre-wrap">'+esc(x[1])+'</div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+}
+
 /* ── Ficha completa del contacto ───────────────────────────────── */
 window.verCliente = function(id){
   var c = C.clientes.filter(function(x){ return x.id === id; })[0];
@@ -295,6 +345,8 @@ window.verCliente = function(id){
         (c.motivo_perdida ? fila('Por qué se perdió', c.motivo_perdida) : '')+
       '</div>'+
     '</div>'+
+
+    bloqueQuienEs(c)+
 
     (c.notas ? '<div style="margin-top:14px"><div style="font-weight:800;color:var(--navy);font-size:.88rem;margin-bottom:4px">Notas</div>'+
       '<div style="font-size:.85rem;line-height:1.55;white-space:pre-wrap">'+esc(c.notas)+'</div></div>' : '')+

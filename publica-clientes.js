@@ -167,25 +167,27 @@ window.editarFicha = function(id){
     '"hola, ¿se acuerda de mí?" y una charla de verdad.</div>'+
 
     '<div class="fld"><label>¿De qué trabaja?</label>'+
-      '<input id="fkOcupacion" value="'+esc(c.ocupacion||'')+'" '+
-      'placeholder="Albañil, tiene su cuadrilla"></div>'+
+      '<textarea id="fkOcupacion" rows="2" placeholder="Albañil, tiene su cuadrilla. '+
+      'Trabaja por su cuenta.">'+esc(c.ocupacion||'')+'</textarea></div>'+
 
     '<div class="fld"><label>Familia</label>'+
-      '<input id="fkFamilia" value="'+esc(c.familia||'')+'" '+
-      'placeholder="Casado, dos hijos chicos"></div>'+
+      '<textarea id="fkFamilia" rows="2" placeholder="Casado, dos hijos chicos. '+
+      'La mujer también maneja.">'+esc(c.familia||'')+'</textarea></div>'+
 
     '<div class="fld"><label>¿Cómo llegó a vos?</label>'+
-      '<input id="fkComo" value="'+esc(c.como_lo_conoci||'')+'" '+
-      'placeholder="Lo mandó Ramiro, el del taller"></div>'+
+      '<textarea id="fkComo" rows="2" placeholder="Lo mandó Ramiro, el del taller de la '+
+      'vuelta.">'+esc(c.como_lo_conoci||'')+'</textarea></div>'+
 
     '<div class="fld"><label>Para tener en cuenta</label>'+
-      '<textarea id="fkNotas" rows="4" placeholder="Trabaja hasta las 6, llamarlo después. '+
+      '<textarea id="fkNotas" rows="7" placeholder="Trabaja hasta las 6, llamarlo después. '+
       'Quiere algo que aguante ripio. La decisión la toma con la mujer.">'+
-      esc(c.notas_personales||'')+'</textarea></div>'+
+      esc(c.notas_personales||'')+'</textarea>'+
+      '<div class="mini">Escribí todo lo que haga falta: no hay límite de largo. Esto es lo '+
+      'que dentro de seis meses va a hacer que parezca que te acordabas.</div></div>'+
 
     '<div class="fld"><label>Qué está buscando</label>'+
-      '<input id="fkBusca" value="'+esc(c.busca||'')+'" '+
-      'placeholder="Camioneta usada, caja grande"></div>',
+      '<textarea id="fkBusca" rows="2" placeholder="Camioneta usada, caja grande, hasta '+
+      'veinte mil.">'+esc(c.busca||'')+'</textarea></div>',
 
     [{txt:'Cancelar',clase:'btn-o',fn:'cerrarModal()'},
      {txt:'Guardar',clase:'',fn:'guardarFicha('+id+')'}]);
