@@ -899,6 +899,196 @@ function mesDePago(p){ return String(p.acreditado_en || p.creado_en || p.fecha |
 function vacio(texto){ return '<div class="mini">'+texto+'</div>'; }
 
 /* ═══════════════════════════════════════════════════════════════
+   LA CHOMBA DE LA PRIMERA VENTA, QUE ES UN DATO DE LA PERSONA
+
+   BIVONACARS-MERCHANDISING.md §2.3: la primera venta de cada
+   comisionista le da su chomba. No se la vendés ni se la regalás al
+   entrar — la gana vendiendo, y después la usa trabajando, que es
+   donde el pointer hace publicidad que ya está paga.
+
+   Lo que hay que no confundir, y es la razón de que esto viva acá y
+   no en el bloque de arriba: el regalo al comprador es un dato DE LA
+   OPERACIÓN y la chomba es un dato DE LA PERSONA. Una vez por
+   comisionista, no una por venta. Si se guardara en `operaciones`
+   se mezclaría con el regalo del comprador y la comparación de
+   "¿el regalo mueve algo?" dejaría de medir lo que dice medir: la
+   primera venta de cada persona tendría siempre un regalo cargado de
+   más. Por eso las tres columnas nuevas van en `perfiles`.
+
+   Quién la gana NO se guarda: se calcula de las ventas cerradas, que
+   es el único dato que no se puede desincronizar. Lo que se guarda es
+   sólo la entrega.
+
+   Y la decisión que la pantalla no toma sola: KARI arranca cuando
+   BivonaCars ya esté funcionando, así que el programa todavía no
+   tiene fecha de inicio. Mientras no la tenga, los comisionistas que
+   ya cumplieron su primera venta no figuran como deuda —figuran como
+   una decisión de Ignacio: si la chomba se da retroactiva o si el
+   programa cuenta desde el día que arranque.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* La fecha de arranque del programa. En null a propósito: no es un
+   dato que falte cargar, es una decisión que todavía no se tomó
+   (ítem 2.3 / punto 4 del documento de KARI). Cuando Ignacio la
+   fije, poner acá la fecha ISO y la pantalla separa sola las
+   ganadas desde el arranque de las ganadas antes. */
+var CHOMBA_DESDE = null;
+
+/* La primera venta cerrada de cada persona, de las operaciones. Se
+   calcula y no se guarda: una columna "ya vendió" se desincroniza
+   el día que se borre o se corrija una venta. */
+function primeraVentaPor(){
+  var out = {};
+  (D.operaciones || []).forEach(function(o){
+    var id = o.usuario_id;
+    if(!id) return;                       /* venta sin comisionista: no la gana nadie */
+    var f = String(o.fecha || '');
+    if(!f) return;
+    if(!out[id] || f < out[id].fecha) out[id] = { fecha:f, ventas:0 };
+  });
+  (D.operaciones || []).forEach(function(o){
+    if(o.usuario_id && out[o.usuario_id]) out[o.usuario_id].ventas++;
+  });
+  return out;
+}
+
+/* Los cuatro estados de una persona frente a la chomba. Igual que con
+   el regalo, el que importa es el que separa "no la tiene" de "no la
+   ganó": son dos cosas distintas y sólo una es una deuda. */
+function estadoChomba(p, primera){
+  if(p.chomba_entregada_en)                       return 'entregada';
+  if(!primera)                                    return 'sin_ventas';
+  if(CHOMBA_DESDE && primera.fecha >= CHOMBA_DESDE) return 'debe';
+  return 'previa';                                /* la ganó antes del programa */
+}
+
+window.formChomba = function(id){
+  var p = (D.perfiles || []).filter(function(x){ return x.id === id; })[0];
+  if(!p) return toast('No se encontró el perfil','error');
+  var primera = primeraVentaPor()[id];
+
+  modal('Chomba de KARI — ' + esc(((p.nombre||'')+' '+(p.apellido||'')).trim()),
+    '<div class="note w" style="margin-bottom:14px">'+
+      (primera
+        ? '<b>Primera venta: ' + fmtFecha(primera.fecha) + '.</b> Lleva ' + primera.ventas +
+          ' venta' + (primera.ventas>1?'s':'') + ' cerrada' + (primera.ventas>1?'s':'') + '. '
+        : '<b>Todavía no cerró ninguna venta.</b> La chomba se gana vendiendo (punto 2.3), '+
+          'así que anotarla ahora es adelantarla. ') +
+      'Es una sola pieza por persona y no por venta: el regalo al comprador se anota en la '+
+      'venta, en la tabla de arriba.</div>'+
+    '<div class="grid2">'+
+      '<div class="fld"><label>Cuándo se la entregaste</label>'+
+        '<input id="chFecha" type="date" value="'+esc(p.chomba_entregada_en || '')+'"></div>'+
+      '<div class="fld"><label>Talle</label>'+
+        '<input id="chTalle" value="'+esc(p.chomba_talle || '')+'" placeholder="M"></div>'+
+    '</div>'+
+    '<div class="fld"><label>Qué costó (USD)</label>'+
+      '<input id="chCosto" type="number" step="0.01" min="0" value="'+esc(p.chomba_costo_usd||'')+'" '+
+      'placeholder="0">'+
+      '<div class="mini">El documento estima USD 15–28 por persona, una sola vez. Se carga en '+
+      'USD como el resto de los costos de KARI, para no convertir nada.</div></div>',
+    [{txt:'Cancelar', clase:'btn-o', fn:'cerrarModal()'}].concat(
+      p.chomba_entregada_en
+        ? [{txt:'Borrar la entrega', clase:'btn-o', fn:"guardarChomba('"+id+"',true)"}]
+        : []
+     ).concat(
+      [{txt:'Guardar', clase:'', fn:"guardarChomba('"+id+"',false)"}]));
+};
+
+window.guardarChomba = async function(id, borrar){
+  var datos;
+  if(borrar){
+    datos = { chomba_entregada_en:null, chomba_talle:null, chomba_costo_usd:null };
+  } else {
+    var fecha = val('chFecha');
+    if(!fecha) return toast('Poné la fecha en que se la entregaste','error');
+    var costo = val('chCosto') === '' ? null : Number(val('chCosto'));
+    if(costo !== null && !(costo >= 0)) return toast('El costo no puede ser negativo','error');
+    datos = { chomba_entregada_en:fecha, chomba_talle:val('chTalle') || null,
+              chomba_costo_usd:costo };
+  }
+  cargando(true,'Guardando…');
+  var r = await sb.from('perfiles').update(datos).eq('id', id);
+  cargando(false);
+  if(r.error) return toast(mensajeError(r.error),'error');
+  cerrarModal(); await cargarTodo(); render();
+  toast(borrar ? 'Se borró la entrega de la chomba' : 'Chomba anotada','ok');
+};
+
+/* ── La tarjeta, que vive en la misma pestaña y aparte a propósito ──
+   Está debajo de la tabla de ventas para que se vea que son dos cosas
+   distintas contadas por separado, no dos columnas de la misma tabla. */
+function tarjetaChomba(){
+  var primeras = primeraVentaPor();
+  var gente = (D.perfiles || []).filter(function(p){ return !p.es_dueno; });
+
+  var g = { entregada:[], debe:[], previa:[], sin_ventas:[] };
+  gente.forEach(function(p){ g[estadoChomba(p, primeras[p.id])].push(p); });
+
+  var gastado = g.entregada.reduce(function(s,p){
+    return s + (Number(p.chomba_costo_usd)||0); }, 0);
+
+  var ETIQ = {
+    entregada:  ['Entregada',            '#059669'],
+    debe:       ['La ganó, no la tiene', '#D97706'],
+    previa:     ['La ganó antes',        '#64748B'],
+    sin_ventas: ['Todavía no la ganó',   '#94A3B8']
+  };
+
+  var orden = { debe:0, previa:1, entregada:2, sin_ventas:3 };
+  var filas = gente.slice().sort(function(a,b){
+    var da = orden[estadoChomba(a, primeras[a.id])], db = orden[estadoChomba(b, primeras[b.id])];
+    if(da !== db) return da - db;
+    return String(nombrePerfil(a.id)||'').localeCompare(String(nombrePerfil(b.id)||''));
+  });
+
+  var aviso = CHOMBA_DESDE
+    ? '<div class="mini" style="margin-bottom:12px">El programa cuenta desde el '+
+      fmtFecha(CHOMBA_DESDE)+'. Las primeras ventas anteriores a esa fecha figuran como '+
+      '<b>"la ganó antes"</b> y no como deuda.</div>'
+    : '<div class="note" style="margin-bottom:12px"><b>El programa no arrancó todavía, '+
+      'y eso lo decidís vos.</b> KARI existe cuando BivonaCars ya esté funcionando, así que '+
+      'la chomba de la primera venta no tiene fecha de inicio. Hoy hay <b>'+g.previa.length+
+      '</b> persona'+(g.previa.length===1?'':'s')+' que ya cumplió su primera venta: cuando '+
+      'arranque el programa hay que decidir si se la das retroactiva o si cuenta desde el día '+
+      'del arranque. Mientras no se decida, la pantalla no las cuenta como deuda — las cuenta '+
+      'como la decisión que son.</div>';
+
+  var tabla = filas.length
+    ? '<div class="tbl-wrap"><table><thead><tr><th>Comisionista</th><th>Primera venta</th>'+
+      '<th>Ventas</th><th>Chomba</th><th>Talle</th><th>Costo</th><th></th></tr></thead><tbody>'+
+      filas.map(function(p){
+        var pr = primeras[p.id], e = estadoChomba(p, pr), et = ETIQ[e];
+        return '<tr'+(e==='sin_ventas'?' style="opacity:.55"':'')+'>'+
+          '<td><b>'+esc(nombrePerfil(p.id) || '—')+'</b></td>'+
+          '<td>'+(pr ? fmtFecha(pr.fecha) : '—')+'</td>'+
+          '<td>'+(pr ? pr.ventas : 0)+'</td>'+
+          '<td><span style="color:'+et[1]+';font-weight:700">'+et[0]+'</span>'+
+            (e==='entregada' ? '<div class="mini">el '+fmtFecha(p.chomba_entregada_en)+'</div>' : '')+'</td>'+
+          '<td>'+(p.chomba_talle ? esc(p.chomba_talle) : '—')+'</td>'+
+          '<td>'+(p.chomba_costo_usd != null ? fmtUSD(p.chomba_costo_usd)
+                 : (e==='entregada' ? '<span class="mini">no se cargó</span>' : '—'))+'</td>'+
+          '<td><button class="btn btn-sm btn-o" onclick="formChomba(\''+p.id+'\')">'+
+            (e==='entregada' ? 'Cambiar' : 'Anotar')+'</button></td></tr>';
+      }).join('')+'</tbody></table></div>'
+    : vacio('Todavía no hay comisionistas cargados.');
+
+  return tarjeta('La chomba de la primera venta',
+    'Una por persona, no una por venta (punto 2.3)',
+    aviso+
+    '<div class="kpis" style="margin-bottom:14px">'+
+      '<div class="kpi g"><div class="lb">Chombas entregadas</div><div class="vl">'+g.entregada.length+'</div>'+
+        '<div class="df">'+fmtUSD(Math.round(gastado))+' en total</div></div>'+
+      '<div class="kpi '+(g.debe.length?'p':'')+'"><div class="lb">Ganadas y no entregadas</div>'+
+        '<div class="vl">'+g.debe.length+'</div>'+
+        '<div class="df">'+(g.debe.length?'hay que pedirlas':'ninguna pendiente')+'</div></div>'+
+      '<div class="kpi a"><div class="lb">Ganadas antes del programa</div><div class="vl">'+g.previa.length+'</div>'+
+        '<div class="df">lo decidís vos</div></div>'+
+    '</div>'+
+    tabla);
+}
+
+/* ═══════════════════════════════════════════════════════════════
    REGALOS DE KARI, ANOTADOS EN LA VENTA
 
    BIVONACARS-MERCHANDISING.md §7 punto 6: si el regalo entregado no
@@ -1114,6 +1304,7 @@ function vistaStatsRegalos(){
       'inventaría el resultado.</div>')+
 
     tarjeta('Venta por venta','Anotá el regalo cuando lo entregues', tabla)+
+    tarjetaChomba()+
   '</div>';
 }
 
