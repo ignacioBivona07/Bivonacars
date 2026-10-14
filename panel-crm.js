@@ -33,6 +33,18 @@ function plata(m, n){ return (m === 'ARS' ? ars(n) : usd(n)); }
    porque este archivo tiene su propio cierre y no ve aquel "config". */
 function cotizacionDeReferencia(){ return Number(window.cotizacionDolar) || 0; }
 
+/* Mismo aviso que en el alta (parche-panel.js). Acá llega por window
+   porque este archivo vive en su propio cierre y no ve "config". */
+function avisoCotizacionVieja(){
+  var d = Number(window.cotizacionDolarDias);
+  var tope = Number(window.DIAS_COTIZACION_VIEJA) || 15;
+  if(!window.cotizacionDolarDesde || !isFinite(d) || d < tope) return '';
+  var f = String(window.cotizacionDolarDesde).slice(0,10).split('-');
+  return ' <b>La de Configuración se cargó hace ' + d + ' días' +
+         (f.length === 3 ? ' (' + f[2] + '/' + f[1] + '/' + f[0] + ')' : '') +
+         '.</b> Si este auto se pactó a otro dólar, escribilo acá.';
+}
+
 /* Cambiar de moneda convierte el precio ya escrito en vez de obligar a
    recalcularlo a mano. */
 window.cambiarMonedaEdicion = function(){
@@ -914,7 +926,8 @@ window.editarVehiculo = function(id){
       '<div class="fld"><label>&nbsp;</label><div class="mini" style="line-height:1.45">'+
         'Viene de Configuración. Al cambiar de moneda el precio se convierte '+
         'solo. Queda congelada con el vehículo: ordena el catálogo y calcula '+
-        'la gama, y no se mueve cuando se mueve el dólar.</div></div>'+
+        'la gama, y no se mueve cuando se mueve el dólar.' + avisoCotizacionVieja() +
+        '</div></div>'+
     '</div><div class="grid3">'+
       campo('Color','evColor','text','value="'+esc(v.color||'')+'"')+
       selec('Combustible','evComb',['Nafta','Diésel','Híbrido','Eléctrico','GNC','Nafta/GNC'], v.combustible)+

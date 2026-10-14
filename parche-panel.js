@@ -212,7 +212,8 @@ function vistaPublicar(){
       '<div class="fld"><label>&nbsp;</label><div class="mini" style="line-height:1.45">'+
         'Se completa con la cotización de Configuración. Al cambiar de moneda '+
         'el precio se convierte solo. Queda congelada con el vehículo: es la '+
-        'que ordena el catálogo y calcula la gama.</div></div>'+
+        'que ordena el catálogo y calcula la gama.' + avisoCotizacionVieja() +
+        '</div></div>'+
     '</div><div class="grid3">'+
       campo('Propietario','pvProp','text','placeholder="Nombre y apellido"',true)+
       campo('Teléfono del propietario','pvTel','text','placeholder="+54 9 11 …"')+
@@ -286,6 +287,33 @@ function cotizacionGeneral(){
   return Number(config.cotizacion_dolar ? config.cotizacion_dolar.valor : 0) || 0;
 }
 
+/* Una cotización vieja no se nota: el número está ahí, la conversión
+   funciona y el precio sale mal. Por eso se dice hace cuánto se cargó,
+   donde se usa, en vez de dejarlo como un dato silencioso de
+   Configuración. No bloquea nada — es el dueño el que decide con qué
+   dólar trabaja, y puede tener motivos para no usar el del día. */
+var DIAS_COTIZACION_VIEJA = 15;
+
+function diasDeLaCotizacion(){
+  var c = config.cotizacion_dolar;
+  if(!c || !c.actualizado_en) return null;
+  var t = Date.parse(String(c.actualizado_en));
+  if(!t) return null;
+  return Math.floor((Date.now() - t) / 86400000);
+}
+
+/* Texto para los recuadros de ayuda. Devuelve '' cuando la cotización es
+   reciente, así se puede concatenar sin preguntar. */
+function avisoCotizacionVieja(){
+  var d = diasDeLaCotizacion();
+  if(d === null || d < DIAS_COTIZACION_VIEJA) return '';
+  var c = config.cotizacion_dolar;
+  return ' <b>La de Configuración se cargó hace ' + d + ' días (' +
+         fechaCorta(c.actualizado_en) + ') y dice ' +
+         Number(c.valor).toLocaleString('es-AR') + '.</b> El dólar se mueve: ' +
+         'conviene revisarla antes de publicar, o escribir acá la de este auto.';
+}
+
 /* La cotización del alta arranca con la de Configuración, para no tener
    que escribirla en cada carga. Se puede pisar a mano si ese auto en
    particular se pactó a otro valor. */
@@ -313,7 +341,14 @@ window.cambiarMonedaAlta = function(){
   if(p > 0 && cot > 0 && nueva !== previa){
     var convertido = (nueva === 'ARS') ? p * cot : p / cot;
     ponerVal('pvPrecio', Math.round(convertido));
-    toast('Precio convertido a ' + nueva + ' con cotización ' + cot, 'ok');
+    var d = diasDeLaCotizacion();
+    /* Si convirtió con la de Configuración (no con una escrita a mano) y
+       esa está vieja, el aviso va en el mismo toast: es el momento en que
+       el número efectivamente se usó. */
+    if(!Number(val('pvCotiz')) && d !== null && d >= DIAS_COTIZACION_VIEJA)
+      toast('Convertido a ' + nueva + ' con ' + cot + ', que se cargó hace ' + d + ' días', 'error');
+    else
+      toast('Precio convertido a ' + nueva + ' con cotización ' + cot, 'ok');
   } else if(nueva === 'ARS' && !(cot > 0)){
     toast('Cargá la cotización del dólar en Configuración para convertir solo','error');
   }
@@ -2023,6 +2058,9 @@ async function cargarConfig(){
   /* panel-crm.js vive en su propio cierre y no ve este "config".
      Se expone la cotización sola, que es lo único que necesita de acá. */
   window.cotizacionDolar = cotizacionGeneral();
+  window.cotizacionDolarDias  = diasDeLaCotizacion();
+  window.cotizacionDolarDesde = config.cotizacion_dolar ? config.cotizacion_dolar.actualizado_en : null;
+  window.DIAS_COTIZACION_VIEJA = DIAS_COTIZACION_VIEJA;
 }
 async function cargarExtras(){
   var r = await Promise.all([
