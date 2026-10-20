@@ -282,8 +282,11 @@ function vistaInicio(){
         'Algunos sí y otros son de particulares que nos los confiaron para venderlos. En '+
         'los dos casos el vehículo pasa por la misma revisión y los papeles se tramitan igual.')+
       faq('¿Puedo entregar mi auto usado como parte de pago?',
-        'En muchos casos sí. Fijate en la ficha del vehículo si dice que acepta permuta, y '+
-        'habláramoslo con el comisionista: se tasa el tuyo y se descuenta del precio.')+
+        'En muchos casos sí. Fijate en la ficha del vehículo si dice que acepta permuta y '+
+        'hablalo con el comisionista. El orden que usamos es este: primero elegís y probás el '+
+        'que te llevás, y después tasamos el tuyo en su propia instancia, por escrito y con los '+
+        'comparables de la semana. Si conseguís más por tu cuenta, vendelo por tu cuenta y '+
+        'venís con la plata.')+
       faq('¿Qué pasa si el auto que me interesa ya tiene una seña?',
         'Sale del catálogo mientras se cierra esa operación. Si se cae, vuelve a aparecer '+
         'publicado automáticamente.')+
