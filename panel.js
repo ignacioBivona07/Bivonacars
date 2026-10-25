@@ -209,23 +209,31 @@ function sVisitas(){const a=D.visitas,t=a.filter(i=>i.estado==="pendiente");retu
     <div class="kpi g"><div class="lb">Confirmadas</div><div class="vl">${a.filter(i=>i.estado==="confirmada").length}</div><div class="df">Agendadas</div></div>
     <div class="kpi"><div class="lb">Con interesado</div><div class="vl">${a.filter(i=>i.tipo==="interesado").length}</div><div class="df">Potencial de cierre</div></div>
     <div class="kpi p"><div class="lb">Sesiones de fotos</div><div class="vl">${a.filter(i=>i.tipo==="fotos").length}</div><div class="df">Para publicaciones</div></div>
+    <div class="kpi"><div class="lb">Realizadas</div><div class="vl">${a.filter(i=>i.estado==="realizada").length}</div><div class="df">Todas con la nota escrita</div></div>
   </div>
   ${a.length===0?'<div class="empty"><div class="ic">📅</div>No hay visitas agendadas</div>':`
   <div class="tbl-wrap"><table>
-    <thead><tr><th>Fecha y hora</th><th>Vehículo</th><th>Comisionista</th><th>Tipo</th><th>Nota</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Fecha y hora</th><th>Vehículo</th><th>Comisionista</th><th>Tipo</th><th>Aviso previo</th><th>Qué pasó</th><th>Estado</th><th></th></tr></thead>
     <tbody>${a.map(i=>{const o=i.vehiculos;return`<tr>
         <td><b>${fmtFecha(i.fecha)}</b><div class="mini">${i.hora||""} hs</div></td>
         <td>${o?`<b>${o.icono||"🚗"} ${o.marca} ${o.modelo}</b><div class="mini">${o.ubicacion||""}</div>`:"—"}</td>
         <td>${nombreDe(i.perfiles)}<div class="mini">${i.perfiles&&i.perfiles.tel||""}</div></td>
         <td><span class="pill ${i.tipo==="fotos"?"p-blue":"p-pur"}">${i.tipo==="fotos"?"📷 Fotos":"👤 Interesado"}</span></td>
-        <td class="mini" style="max-width:200px">${i.nota||"—"}</td>
+        <td class="mini" style="max-width:180px">${i.nota||"—"}</td>
+        <td class="mini" style="max-width:220px">${i.resultado?i.resultado:i.estado==="realizada"?"—":'<span style="color:var(--gray-l)">se escribe al cerrarla</span>'}</td>
         <td><span class="pill ${i.estado==="confirmada"?"p-green":i.estado==="pendiente"?"p-amber":"p-gray"}">${i.estado}</span></td>
         <td style="white-space:nowrap">
           ${i.estado==="pendiente"?`<button class="btn btn-green btn-sm" onclick="estadoVisita(${i.id},'confirmada')">Confirmar</button>`:""}
-          ${i.estado==="confirmada"?`<button class="btn btn-o btn-sm" onclick="estadoVisita(${i.id},'realizada')">Realizada</button>`:""}
+          ${i.estado==="confirmada"?`<button class="btn btn-o btn-sm" onclick="cerrarVisita(${i.id})">Realizada</button>`:""}
           <button class="btn btn-o btn-sm" onclick="borrarVisita(${i.id})" style="color:var(--red);border-color:#FECACA">✕</button>
         </td></tr>`}).join("")}
-    </tbody></table></div>`}`}async function estadoVisita(a,t){cargando(!0,"Actualizando…");const{error:i}=await sb.from("visitas").update({estado:t}).eq("id",a);if(i)return cargando(!1),toast(mensajeError(i),"error");await cargarTodo(),cargando(!1),render(),toast(t==="confirmada"?"Visita confirmada — el comisionista ya la ve en su panel":"Visita marcada como realizada","ok")}async function borrarVisita(a){cargando(!0,"Cancelando…");const{error:t}=await sb.from("visitas").delete().eq("id",a);if(t)return cargando(!1),toast(mensajeError(t),"error");await cargarTodo(),cargando(!1),render(),toast("Visita cancelada","ok")}function sDocs(){const a={doc_dominio:"Informe dominio",doc_patentes:"Libre deuda",doc_vtv:"VTV",doc_policial:"Verif. policial",doc_mandato:"Mandato"},t={doc_mandato:"Mandato",doc_compraventa:"Compraventa",doc_f08:"Formulario 08",doc_factura_empresa:"Factura empresa",doc_factura_vendedor:"Factura vendedor"},i=D.vehiculos,o=i.filter(e=>!Object.keys(a).every(s=>e[s])),d=D.operaciones.filter(e=>!Object.keys(t).every(s=>e[s]));return`
+    </tbody></table></div>`}`}async function estadoVisita(a,t){if(t==="realizada")return cerrarVisita(a);cargando(!0,"Actualizando…");const{error:i}=await sb.from("visitas").update({estado:t}).eq("id",a);if(i)return cargando(!1),toast(mensajeError(i),"error");await cargarTodo(),cargando(!1),render(),toast(t==="confirmada"?"Visita confirmada — el comisionista ya la ve en su panel":"Visita marcada como realizada","ok")}function cerrarVisita(a){const v=D.visitas.find(function(x){return x.id===a;})||{},o=v.vehiculos;modal("Cerrar visita"+(o?" — "+o.marca+" "+o.modelo:""),`
+    <div class="fld"><label>¿Qué pasó en la visita? <span class="req">*</span></label>
+      <textarea id="vrNota" rows="4" placeholder="Ej: vino con mecánico propio, le marcó una pérdida de aceite; vuelve el martes con la mujer"></textarea>
+      <div class="hint">Una línea alcanza. Lo que no sirve es que no esté.</div></div>
+    ${v.nota?`<div class="note" style="margin-bottom:14px"><b>Aviso previo del comisionista:</b> ${v.nota}</div>`:""}
+    <div class="note w">Una visita no queda registrada como realizada sin esta nota. Es la única fuente de lo que el vehículo o el cliente mostró en persona: sin ella, el repaso semanal no tiene con qué contestar.</div>
+  `,[{txt:"Cancelar",clase:"btn-o",fn:"cerrarModal()"},{txt:"Marcar realizada",clase:"",fn:`guardarVisitaRealizada(${a})`}])}async function guardarVisitaRealizada(a){const t=(($("vrNota")||{}).value||"").trim();if(t.length<3)return toast("Escribí qué pasó en la visita — aunque sea una línea","error");cerrarModal(),cargando(!0,"Guardando…");const{error:i}=await sb.from("visitas").update({estado:"realizada",resultado:t}).eq("id",a);if(i)return cargando(!1),toast(mensajeError(i),"error");await cargarTodo(),cargando(!1),render(),toast("Visita realizada y anotada","ok")}async function borrarVisita(a){cargando(!0,"Cancelando…");const{error:t}=await sb.from("visitas").delete().eq("id",a);if(t)return cargando(!1),toast(mensajeError(t),"error");await cargarTodo(),cargando(!1),render(),toast("Visita cancelada","ok")}function sDocs(){const a={doc_dominio:"Informe dominio",doc_patentes:"Libre deuda",doc_vtv:"VTV",doc_policial:"Verif. policial",doc_mandato:"Mandato"},t={doc_mandato:"Mandato",doc_compraventa:"Compraventa",doc_f08:"Formulario 08",doc_factura_empresa:"Factura empresa",doc_factura_vendedor:"Factura vendedor"},i=D.vehiculos,o=i.filter(e=>!Object.keys(a).every(s=>e[s])),d=D.operaciones.filter(e=>!Object.keys(t).every(s=>e[s]));return`
   <div class="kpis">
     <div class="kpi g"><div class="lb">Vehículos en regla</div><div class="vl">${i.length-o.length}</div><div class="df">De ${i.length} en catálogo</div></div>
     <div class="kpi a"><div class="lb">Con faltantes</div><div class="vl">${o.length}</div><div class="df ${o.length?"n":""}">No deberían publicarse</div></div>
