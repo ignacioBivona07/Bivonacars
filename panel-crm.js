@@ -1156,8 +1156,9 @@ function vistaComisiones(){
 
   return '<div style="max-width:1020px">'+
   '<div class="note w" style="margin-bottom:18px">Cada venta genera sola la comisión del comisionista, '+
-  'en dinero. <b>Se paga contra factura y por transferencia</b>: sin esas dos cosas se cae la excepción '+
-  'del art. 23 de la LCT y el pago queda como indicio de relación de dependencia. El sistema te pide '+
+  'en dinero. <b>Se paga contra factura y por transferencia.</b> El art. 23 de la LCT pide una de las dos '+
+  '(factura <b>o</b> pago bancario); acá se exigen las dos a propósito, porque la doctrina parafrasea el '+
+  'artículo como si pidiera ambas y lo barato es no depender de esa discusión. El sistema te pide '+
   'el número de factura al marcarla pagada, y no te deja seguir sin él.</div>'+
 
   '<div class="kpis" style="margin-bottom:18px">'+
@@ -1210,10 +1211,13 @@ function vistaComisiones(){
    La Ley 27.802 de Modernización Laboral (6/3/2026) dejó una excepción
    expresa a la presunción de contrato de trabajo para los servicios sin
    dependencia en los que se emitan FACTURAS o el pago vaya por SISTEMAS
-   BANCARIOS. Las tres condiciones —inscripción vigente, factura por cada
+   BANCARIOS. El conector del artículo es O: alcanza con una. Las tres
+   condiciones que exige el panel —inscripción vigente, factura por cada
    comisión, y transferencia a una cuenta que no sea cuenta sueldo— son
-   baratas y son la diferencia entre entrar por la excepción o no. Ver
-   BIVONACARS-FORMALIZACION.md §7.
+   MAS de lo que pide el texto, y a propósito: la doctrina lo parafrasea
+   como cumulativo, y la tercera no sale del art. 23 (ahí no existe la
+   palabra) sino de la primacia de la realidad. Son baratas. Ver
+   BIVONACARS-FORMALIZACION.md §7.1.
 
    Lo que el sistema puede verificar solo, lo verifica y lo bloquea. Lo que
    no puede —si un CBU es una cuenta sueldo no está en el número, es un
